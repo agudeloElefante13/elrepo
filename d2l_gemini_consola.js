@@ -1,6 +1,5 @@
 // ============================================================
-//  D2L → Gemini Solver (todo desde la consola)
-//  Cambia la API key y pega en la consola del navegador
+//  D2L → Gemini Solver
 // ============================================================
 
 (async () => {
@@ -101,6 +100,49 @@ Respuesta:`;
   return match[0];
 }
 
+// ── Llamada a Gemini para justificación (segunda llamada) ────
+
+async function pedirJustificacion(enunciado, opciones, letra) {
+  const opcionesTexto = opciones.map(o => `${o.letra}) ${o.texto}`).join("\n");
+  const mathJaxDisponible = !!(window.MathJax?.Hub || window.MathJax?.typesetPromise);
+
+  const prompt = mathJaxDisponible
+    ? `Eres un experto en matemáticas y ciencias. La respuesta correcta a la siguiente pregunta es la opción ${letra}.
+Explica por qué es correcta mostrando todos los pasos numéricos clave usando notación LaTeX con \( \) para fórmulas y operaciones inline. Ejemplo: "\( v^2 = 22.22^2 - 2(1.0)(2) = 489.7 \), \( v = 22.13 \) m/s. Distancia \( = 489.7/10 = 48.97 \) m. Total \( = 50.97 \) m \( < 150 \) m." Sé conciso pero completo.
+
+Pregunta:
+${enunciado}
+
+Opciones:
+${opcionesTexto}
+
+La respuesta correcta es: ${letra}`
+    : `Eres un experto en matemáticas y ciencias. La respuesta correcta a la siguiente pregunta es la opción ${letra}.
+Explica por qué es correcta en texto plano, mostrando las operaciones en línea con los valores numéricos sustituidos. Ejemplo: "v² = 22.22² - 2(1.0)(2) = 489.7, v = 22.13 m/s. Distancia = 489.7/10 = 48.97 m. Total = 50.97 m < 150 m." Sé conciso pero muestra todos los pasos numéricos clave.
+
+Pregunta:
+${enunciado}
+
+Opciones:
+${opcionesTexto}
+
+La respuesta correcta es: ${letra}`;
+
+  const res = await fetch(GEMINI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+    }),
+  });
+
+  if (!res.ok) return "";
+  const data = await res.json();
+  const responseParts = data.candidates?.[0]?.content?.parts ?? [];
+  return responseParts.map(p => p.text ?? "").join("").trim();
+}
+
 // ── Seleccionar respuesta ────────────────────────────────────
 
 function seleccionarRespuesta(fieldset, letra) {
@@ -110,11 +152,46 @@ function seleccionarRespuesta(fieldset, letra) {
   if (radio) radio.click();
 }
 
+// ── UI discreta ──────────────────────────────────────────────
+
+const todosIndicadores = [];
+let indicadoresVisibles = true;
+
+function toggleIndicadores() {
+  indicadoresVisibles = !indicadoresVisibles;
+  todosIndicadores.forEach(el => {
+    el.style.display = indicadoresVisibles ? "block" : "none";
+  });
+}
+
+// Toggle por click en enunciado — se agrega por pregunta en el main
+
+function crearIndicador(fieldset) {
+  const div = document.createElement("div");
+  div.style.cssText = "margin-top:4px;margin-bottom:8px;font-size:10px;color:#aaa;font-family:monospace;user-select:none;opacity:0.6;";
+  div.innerHTML = "⏳";
+  fieldset.insertAdjacentElement("afterend", div);
+  todosIndicadores.push(div);
+  return div;
+}
+
+function mostrarRespuesta(indicador, letra, justificacion) {
+  indicador.style.cssText = "margin-top:4px;margin-bottom:8px;font-size:10px;color:#888;font-family:sans-serif;user-select:none;opacity:0.55;border-left:2px solid #ccc;padding-left:6px;line-height:1.5;max-width:700px;white-space:pre-wrap;";
+  indicador.innerHTML = `✓ <strong style="color:#555">${letra}</strong> &nbsp;—&nbsp; <span style="font-size:9px;white-space:normal;word-wrap:break-word;">${justificacion}</span>`;
+
+  // Renderizar LaTeX con MathJax si está disponible
+  try {
+    if (window.MathJax?.Hub) MathJax.Hub.Queue(["Typeset", MathJax.Hub, indicador]);
+    else if (window.MathJax?.typesetPromise) MathJax.typesetPromise([indicador]).catch(()=>{});
+  } catch(e) {}
+}
+
+function mostrarError(indicador) {
+  indicador.style.cssText = "margin-top:4px;font-size:10px;color:#e88;font-family:monospace;opacity:0.6;";
+  indicador.innerHTML = "✗ error";
+}
+
 // ── Obtener documento correcto ───────────────────────────────
-// D2L puede tener las preguntas en 3 lugares distintos:
-// 1. Directo en document
-// 2. En iframe#ctl_2
-// 3. En iframe#ctl_2 > iframe[name=pageFrame]
 
 function obtenerDoc() {
   if (document.querySelectorAll("fieldset.dfs_m").length > 0) return document;
@@ -147,9 +224,17 @@ if (fieldsets.length === 0) {
   for (let i = 0; i < fieldsets.length; i++) {
     const fieldset = fieldsets[i];
     const num = i + 1;
+    const indicador = crearIndicador(fieldset);
+
     try {
       const enunciadoBlock = getEnunciadoBlock(fieldset);
       if (!enunciadoBlock) throw new Error("No se encontró el enunciado");
+
+      // Click en enunciado muestra/esconde el indicador de esa pregunta
+      enunciadoBlock.style.cursor = "default";
+      enunciadoBlock.addEventListener("click", () => {
+        indicador.style.display = indicador.style.display === "none" ? "block" : "none";
+      });
 
       const enunciado = htmlToText(enunciadoBlock.getAttribute("html") || "");
 
@@ -170,15 +255,15 @@ if (fieldsets.length === 0) {
       console.log(`P${num}: consultando Gemini...`);
       const respuesta = await preguntarAGemini(enunciado, opciones, imagen);
 
-      // Esperar entre 20 y 45 segundos antes de seleccionar (comportamiento humano)
-      const espera = Math.floor(Math.random() * (45000 - 20000 + 1)) + 20000;
-      console.log(`P${num}: esperando ${(espera/1000).toFixed(1)}s antes de responder...`);
-      await new Promise(r => setTimeout(r, espera));
+      // Pedir justificación en paralelo (no bloquea el delay)
+      const justificacion = await pedirJustificacion(enunciado, opciones, respuesta);
+      mostrarRespuesta(indicador, respuesta, justificacion);
 
       console.log(`%c✅ Pregunta ${num} → ${respuesta}`, "font-size:14px; font-weight:bold; color:lime;");
       seleccionarRespuesta(fieldset, respuesta);
 
     } catch (err) {
+      mostrarError(indicador);
       console.error(`❌ Pregunta ${num}: ${err.message}`);
     }
   }
