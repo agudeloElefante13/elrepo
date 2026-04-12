@@ -120,10 +120,11 @@
     </div>
     <script>
         const BASE = window.location.origin;
-        const SESSION_ID = new URLSearchParams(window.location.search).get("s");
+        let SESSION_ID = new URLSearchParams(window.location.search).get("s");
         let currentCreatedAt = null;
         let session = null;
         let saveTimers = {};
+        let pollTimer = null;
 
         function playPing() {
             try {
@@ -153,7 +154,7 @@
         }
 
         async function pollStatus() {
-            if (!SESSION_ID) { showNoSession(); return; }
+            if (!SESSION_ID) { await showSessionPicker(); return; }
             try {
                 const res = await fetch(BASE + "/api/status?s=" + SESSION_ID);
                 const data = await res.json();
@@ -168,9 +169,62 @@
             } catch(e) {}
         }
 
-        function showNoSession() {
-            document.getElementById("content").innerHTML =
-                '<div class="waiting"><div class="waiting-text">⚠️ Sin ID de sesión</div><div class="waiting-sub">Usa el link completo del quiz: /helper?s=ID</div></div>';
+        async function showSessionPicker() {
+            const badge = document.getElementById("statusBadge");
+            badge.textContent = "Sesiones";
+            badge.className = "header-badge badge-waiting";
+            document.getElementById("progressFill").style.width = "0%";
+            document.getElementById("progressText").textContent = "";
+
+            try {
+                const res = await fetch(BASE + "/api/sessions");
+                const data = await res.json();
+                const container = document.getElementById("content");
+
+                if (!data.sessions || data.sessions.length === 0) {
+                    container.innerHTML =
+                        '<div class="waiting">' +
+                        '<div class="pulse-container"><div class="pulse-ring"></div><div class="pulse-ring"></div><div class="pulse-dot"></div></div>' +
+                        '<div class="waiting-text">No hay sesiones activas</div>' +
+                        '<div class="waiting-sub">Esperando que alguien inicie un quiz...</div></div>';
+                    return;
+                }
+
+                let html = '<div style="padding:8px 0;">';
+                html += '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;text-align:center;">Seleccion\u00e1 una sesi\u00f3n:</div>';
+                data.sessions.forEach(s => {
+                    const time = new Date(s.createdAt);
+                    const ago = Math.round((Date.now() - time.getTime()) / 60000);
+                    const agoText = ago < 1 ? "ahora" : ago + " min";
+                    const pct = s.total > 0 ? Math.round((s.answered / s.total) * 100) : 0;
+                    html += '<div class="question-card" style="cursor:pointer;transition:all 0.2s;" ' +
+                        'onmouseenter="this.style.borderColor=\'rgba(59,130,246,0.5)\'" ' +
+                        'onmouseleave="this.style.borderColor=\'rgba(255,255,255,0.06)\'" ' +
+                        'onclick="selectSession(\'' + s.id + '\')">' +
+                        '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+                        '<div>' +
+                        '<div style="font-size:18px;font-weight:700;letter-spacing:0.05em;color:var(--accent-blue);">' + s.id.toUpperCase() + '</div>' +
+                        '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">' + s.total + ' preguntas · hace ' + agoText + '</div>' +
+                        '</div>' +
+                        '<div style="text-align:right;">' +
+                        '<div style="font-size:22px;font-weight:700;color:' + (pct >= 100 ? 'var(--accent-green)' : 'var(--text-primary)') + ';">' + pct + '%</div>' +
+                        '<div style="font-size:10px;color:var(--text-dim);">' + s.answered + '/' + s.total + '</div>' +
+                        '</div></div></div>';
+                });
+                html += '</div>';
+                container.innerHTML = html;
+            } catch(e) {
+                document.getElementById("content").innerHTML =
+                    '<div class="error-msg">Error cargando sesiones: ' + e.message + '</div>';
+            }
+        }
+
+        function selectSession(id) {
+            SESSION_ID = id;
+            // Actualizar URL sin recargar
+            history.replaceState(null, "", "/helper?s=" + id);
+            currentCreatedAt = null;
+            pollStatus();
         }
 
         async function loadFullSession() {
