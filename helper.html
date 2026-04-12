@@ -120,6 +120,7 @@
     </div>
     <script>
         const BASE = window.location.origin;
+        const SESSION_ID = new URLSearchParams(window.location.search).get("s");
         let currentCreatedAt = null;
         let session = null;
         let saveTimers = {};
@@ -152,8 +153,9 @@
         }
 
         async function pollStatus() {
+            if (!SESSION_ID) { showNoSession(); return; }
             try {
-                const res = await fetch(BASE + "/api/status");
+                const res = await fetch(BASE + "/api/status?s=" + SESSION_ID);
                 const data = await res.json();
                 if (!data.active) { showWaiting(); return; }
                 if (data.createdAt !== currentCreatedAt) {
@@ -166,9 +168,14 @@
             } catch(e) {}
         }
 
+        function showNoSession() {
+            document.getElementById("content").innerHTML =
+                '<div class="waiting"><div class="waiting-text">⚠️ Sin ID de sesión</div><div class="waiting-sub">Usa el link completo del quiz: /helper?s=ID</div></div>';
+        }
+
         async function loadFullSession() {
             try {
-                const res = await fetch(BASE + "/api/session");
+                const res = await fetch(BASE + "/api/session?s=" + SESSION_ID);
                 if (!res.ok) { showWaiting(); return; }
                 session = await res.json();
                 renderQuestions(session);
@@ -364,7 +371,7 @@
             fetch(BASE + "/api/answer", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ questionIndex, letra })
+                body: JSON.stringify({ sessionId: SESSION_ID, questionIndex, letra })
             }).catch(e => console.error("[Helper] Error:", e));
 
             // Auto-scroll to next unanswered (only if first time answering)
@@ -384,7 +391,7 @@
                 await fetch(BASE + "/api/answer", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ questionIndex, justificacion: text })
+                    body: JSON.stringify({ sessionId: SESSION_ID, questionIndex, justificacion: text })
                 });
                 if (session) session.questions[questionIndex].justificacion = text;
                 const st = document.getElementById("just-status-" + questionIndex);
