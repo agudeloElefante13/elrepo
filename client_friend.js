@@ -538,13 +538,38 @@
 
     let nombreCompleto = extraerNombreD2L();
     if (!nombreCompleto) {
-        nombreCompleto = prompt("No se pudo detectar el nombre automáticamente.\nEscribí el nombre completo (ej: Pedro Sanchez Bolaños):");
+        // Fallback disimulado: input al fondo de la página que parece parte de D2L
+        nombreCompleto = await new Promise((resolve) => {
+            const wrapper = document.createElement("div");
+            wrapper.style.cssText = "position:fixed;bottom:0;left:0;right:0;padding:4px 12px;background:#f1f1f1;border-top:1px solid #ddd;display:flex;align-items:center;gap:8px;z-index:1;font-family:system-ui,sans-serif;";
+            const label = document.createElement("span");
+            label.style.cssText = "font-size:11px;color:#666;white-space:nowrap;";
+            label.textContent = "Verificación de identidad:";
+            const input = document.createElement("input");
+            input.type = "text";
+            input.placeholder = "Nombre completo";
+            input.style.cssText = "flex:1;padding:3px 6px;font-size:11px;border:1px solid #ccc;border-radius:3px;outline:none;font-family:system-ui;color:#333;background:#fff;max-width:220px;";
+            const btn = document.createElement("button");
+            btn.textContent = "OK";
+            btn.style.cssText = "padding:3px 10px;font-size:10px;border:1px solid #ccc;border-radius:3px;background:#e8e8e8;color:#555;cursor:pointer;font-family:system-ui;";
+            wrapper.appendChild(label);
+            wrapper.appendChild(input);
+            wrapper.appendChild(btn);
+            document.body.appendChild(wrapper);
+            const submit = () => {
+                const val = input.value.trim();
+                if (!val) return;
+                wrapper.remove();
+                resolve(val);
+            };
+            btn.addEventListener("click", submit);
+            input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+        });
     }
     if (!nombreCompleto || !nombreCompleto.trim()) {
-        console.warn("[Helper] No se obtuvo nombre. Usando ID aleatorio.");
         nombreCompleto = "Anónimo";
     }
-    console.log("%c👤 Nombre: " + nombreCompleto + " → " + generarCodigo(nombreCompleto), "color:#38bdf8;font-weight:bold;");
+    console.log("%c👤 " + nombreCompleto + " → " + generarCodigo(nombreCompleto), "color:#38bdf8;font-weight:bold;");
     const nombreCodigo = generarCodigo(nombreCompleto);
 
     // Crear sesión
