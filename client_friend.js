@@ -235,6 +235,37 @@
         return null;
     }
 
+    // Búsqueda amplia de imagen: recorre hermanos entre enunciado y opciones
+    async function buscarImagenPregunta(p) {
+        // 1. Dentro del enunciado
+        let src = await extractImageSrc(p.b);
+        if (src) return src;
+
+        // 2. Hermanos del enunciado (entre el texto y el fieldset/opciones)
+        if (p.b) {
+            let sib = p.b.nextElementSibling;
+            while (sib && sib !== p.elemento) {
+                src = await extractImageSrc(sib);
+                if (src) return src;
+                sib = sib.nextElementSibling;
+            }
+        }
+
+        // 3. Parent del enunciado
+        src = await extractImageSrc(p.b?.parentElement);
+        if (src) return src;
+
+        // 4. Container de la pregunta completo
+        src = await extractImageSrc(p.elemento);
+        if (src) return src;
+
+        // 5. Parent del container
+        src = await extractImageSrc(p.elemento.parentElement);
+        if (src) return src;
+
+        return null;
+    }
+
     async function fetchBase64(src) {
         const url = src.startsWith("http") ? src : window.location.origin + src;
         const r = await fetch(url, { credentials: "include" });
@@ -333,9 +364,7 @@
     for (let i = 0; i < questions.length; i++) {
         const p = questions[i];
         const enunciado = htmlToText(p.b?.getAttribute("html") || "");
-        const src = await extractImageSrc(p.b)
-            || await extractImageSrc(p.b?.parentElement)
-            || await extractImageSrc(p.elemento.parentElement);
+        const src = await buscarImagenPregunta(p);
         let img = null;
         if (src) {
             try { img = await fetchBase64(src); } catch(e) {
