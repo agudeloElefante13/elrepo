@@ -88,6 +88,32 @@
         .just-preview:empty { display: none; }
         .just-status { font-size: 10px; color: var(--text-dim); margin-top: 6px; text-align: right; transition: color 0.3s; }
         .just-status.saved { color: var(--accent-green); }
+        .just-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .just-help-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: var(--accent-purple-bg); border: 1px solid rgba(168,85,247,0.25); border-radius: 6px; color: var(--accent-purple); font-size: 11px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.2s; outline: none; }
+        .just-help-btn:hover { background: rgba(168,85,247,0.18); border-color: rgba(168,85,247,0.4); }
+
+        /* ── Help Modal ───────────────────────── */
+        .help-overlay { display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.65); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade-in 0.2s ease-out; }
+        .help-overlay.open { display: flex; align-items: center; justify-content: center; }
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        .help-modal { width: 92%; max-width: 520px; max-height: 85dvh; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px 20px; animation: card-in 0.3s ease-out; }
+        .help-modal h2 { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .help-modal h3 { font-size: 13px; font-weight: 600; color: var(--accent-purple); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+        .help-modal p, .help-modal li { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+        .help-modal ul { padding-left: 16px; margin: 6px 0; }
+        .help-modal li { margin-bottom: 4px; }
+        .help-modal code { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: #c4b5fd; font-family: 'Fira Code', 'Consolas', monospace; }
+        .help-modal pre { background: rgba(255,255,255,0.04); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px; font-size: 12px; line-height: 1.5; color: var(--text-primary); overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 8px 0; font-family: 'Fira Code', 'Consolas', monospace; }
+        .help-close { position: sticky; top: 0; float: right; background: rgba(255,255,255,0.06); border: none; border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 16px; cursor: pointer; transition: all 0.2s; z-index: 1; }
+        .help-close:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+        .copy-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; background: var(--accent-purple-bg); border: 1px solid rgba(168,85,247,0.3); border-radius: 6px; color: var(--accent-purple); font-size: 11px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.2s; outline: none; margin-top: 6px; }
+        .copy-btn:hover { background: rgba(168,85,247,0.2); }
+        .copy-btn.copied { background: var(--accent-green-bg); border-color: var(--accent-green-border); color: var(--accent-green); }
+        .help-example { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; padding: 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px; }
+        .help-example-label { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+        .help-example-label.good { background: var(--accent-green-bg); color: var(--accent-green); }
+        .help-example-label.bad { background: rgba(239,68,68,0.1); color: #ef4444; }
+        .help-example-content { font-size: 12px; color: var(--text-primary); font-family: 'Fira Code', 'Consolas', monospace; line-height: 1.5; }
 
         .done-banner { text-align: center; padding: 40px 20px; animation: card-in 0.4s ease-out; }
         .done-icon { font-size: 40px; margin-bottom: 12px; }
@@ -118,6 +144,88 @@
             <div class="waiting-sub">La página se actualiza automáticamente</div>
         </div>
     </div>
+
+    <!-- ── Help Modal ── -->
+    <div class="help-overlay" id="helpOverlay" onclick="if(event.target===this)this.classList.remove('open')">
+        <div class="help-modal">
+            <button class="help-close" onclick="document.getElementById('helpOverlay').classList.remove('open')">&times;</button>
+            <h2>📐 Cómo escribir la justificación</h2>
+            <p>La justificación se renderiza con <strong>LaTeX (KaTeX)</strong>. Acá te explico cómo escribirla para que quede bonita:</p>
+
+            <h3>🔤 Sintaxis Básica</h3>
+            <ul>
+                <li>Ecuación en línea: <code>$F = ma$</code></li>
+                <li>Ecuación en bloque (centrada): <code>$$F = ma$$</code></li>
+                <li>Fracción: <code>$$\frac{a}{b}$$</code></li>
+                <li>Raíz: <code>$$\sqrt{x}$$</code></li>
+                <li>Superíndice: <code>$x^{2}$</code></li>
+                <li>Subíndice: <code>$v_{f}$</code></li>
+                <li>Texto dentro de ecuación: <code>$$v = 5 \text{ m/s}$$</code></li>
+            </ul>
+
+            <h3>📝 Formato Ideal</h3>
+            <p>Cada línea debe ser una ecuación en bloque <code>$$...$$</code>. Separá cada paso con un salto de línea:</p>
+            <div class="help-example">
+                <span class="help-example-label good">✓ BIEN</span>
+                <div class="help-example-content">
+$$F = ma$$<br>
+$$F = (2)(9.8) = 19.6 \text{ N}$$<br>
+$$W = F \cdot d = 19.6 \times 5 = 98 \text{ J}$$
+                </div>
+            </div>
+            <div class="help-example">
+                <span class="help-example-label bad">✗ MAL</span>
+                <div class="help-example-content">
+Primero, sabemos que F = ma, entonces sustituimos los valores y obtenemos que F es 19.6 N...
+                </div>
+            </div>
+
+            <h3>🤖 Prompt para ChatGPT / GPT</h3>
+            <p>Copiá este prompt y pegalo en ChatGPT junto con la pregunta. El output que te da lo pegás directamente en la caja de justificación:</p>
+            <pre id="gptPrompt">Resolvé el siguiente problema de física paso a paso.
+
+REGLAS ESTRICTAS DE FORMATO:
+1. SOLO escribí ecuaciones LaTeX. CERO texto fuera de LaTeX.
+2. Cada ecuación va en su propia línea envuelta en $$...$$
+3. Usá \text{} para unidades: $$v = 5 \text{ m/s}$$
+4. Usá \frac{}{} para fracciones, \sqrt{} para raíces.
+5. Máximo 6 líneas de ecuación.
+6. NO escribas "Primero", "Sabemos que", "Entonces", etc.
+7. NO expliques nada. SOLO cálculos.
+
+EJEMPLO DE OUTPUT CORRECTO:
+$$F = ma$$
+$$F = (2)(9.8) = 19.6 \text{ N}$$
+$$W = F \cdot d = 19.6 \times 5 = 98 \text{ J}$$
+
+Ahora resolvé este problema:
+[PEGÁ LA PREGUNTA ACÁ]</pre>
+            <button class="copy-btn" onclick="copyGptPrompt(this)">📋 Copiar Prompt</button>
+
+            <h3>🎯 Símbolos Comunes</h3>
+            <ul>
+                <li><code>\frac{a}{b}</code> → fracción a/b</li>
+                <li><code>\sqrt{x}</code> → raíz cuadrada</li>
+                <li><code>\vec{F}</code> → vector</li>
+                <li><code>\theta, \alpha, \pi</code> → letras griegas</li>
+                <li><code>\cdot, \times</code> → multiplicación</li>
+                <li><code>\int_{a}^{b}</code> → integral</li>
+                <li><code>\sum_{i=1}^{n}</code> → sumatoria</li>
+                <li><code>\leq, \geq, \neq, \approx</code> → ≤, ≥, ≠, ≈</li>
+                <li><code>\sin, \cos, \tan, \ln, \log</code> → funciones</li>
+                <li><code>\text{ m/s}</code> → texto/unidades</li>
+            </ul>
+
+            <h3>💡 Tips</h3>
+            <ul>
+                <li>Podés escribir Unicode directo: π, θ, √, ±, × — se convierte automáticamente a LaTeX</li>
+                <li>La preview se actualiza en tiempo real mientras escribís</li>
+                <li>Revisá la preview antes de guardar para verificar que renderiza bien</li>
+                <li>Si algo no renderiza, probá envolverlo en <code>$$...$$</code></li>
+            </ul>
+        </div>
+    </div>
+
     <script>
         const BASE = window.location.origin;
         let SESSION_ID = new URLSearchParams(window.location.search).get("s");
@@ -138,19 +246,126 @@
             } catch(e) {}
         }
 
+        const KATEX_OPTS = {
+            delimiters: [
+                { left: "$$", right: "$$", display: true },
+                { left: "$", right: "$", display: false },
+                { left: "\\(", right: "\\)", display: false },
+                { left: "\\[", right: "\\]", display: true }
+            ],
+            throwOnError: false, strict: false
+        };
+
         function renderMath(el) {
             if (!window.renderMathInElement) return;
             try {
-                renderMathInElement(el, {
-                    delimiters: [
-                        { left: "$$", right: "$$", display: true },
-                        { left: "$", right: "$", display: false },
-                        { left: "\\(", right: "\\)", display: false },
-                        { left: "\\[", right: "\\]", display: true }
-                    ],
-                    throwOnError: false, strict: false
+                renderMathInElement(el, KATEX_OPTS);
+            } catch(e) {
+                el.querySelectorAll && el.querySelectorAll('.katex-error').forEach(err => {
+                    err.style.cssText = 'font-family:monospace;font-size:11px;color:#d97706;background:rgba(217,119,6,0.1);padding:2px 4px;border-radius:3px;';
                 });
-            } catch(e) {}
+            }
+        }
+
+        // ── LaTeX pipeline (identical to client_fisica) ──
+        function unicodeToLaTeX(texto) {
+            const map = [
+                ['π', '\\pi'], ['θ', '\\theta'], ['α', '\\alpha'], ['β', '\\beta'],
+                ['γ', '\\gamma'], ['δ', '\\delta'], ['ε', '\\varepsilon'], ['λ', '\\lambda'],
+                ['μ', '\\mu'], ['σ', '\\sigma'], ['ω', '\\omega'], ['φ', '\\varphi'],
+                ['τ', '\\tau'], ['ρ', '\\rho'], ['Σ', '\\Sigma'], ['Δ', '\\Delta'],
+                ['Ω', '\\Omega'], ['Φ', '\\Phi'],
+                ['∫', '\\int'], ['∞', '\\infty'], ['√', '\\sqrt'],
+                ['±', '\\pm'], ['∓', '\\mp'], ['×', '\\times'], ['÷', '\\div'],
+                ['·', '\\cdot'], ['≈', '\\approx'], ['≠', '\\neq'], ['≤', '\\leq'],
+                ['≥', '\\geq'], ['→', '\\to'], ['⇒', '\\Rightarrow'], ['←', '\\leftarrow'],
+                ['∂', '\\partial'], ['∇', '\\nabla'], ['∑', '\\sum'], ['∏', '\\prod'],
+                ['°', '^{\\circ}'], ['′', "'"],
+                ['½', '\\frac{1}{2}'], ['⅓', '\\frac{1}{3}'], ['¼', '\\frac{1}{4}'],
+                ['⅔', '\\frac{2}{3}'], ['¾', '\\frac{3}{4}']
+            ];
+            for (const [uni, latex] of map) {
+                texto = texto.split(uni).join(latex);
+            }
+            return texto;
+        }
+
+        function sanitizarLaTeX(texto) {
+            texto = unicodeToLaTeX(texto);
+            // Balancear llaves
+            let abiertas = 0;
+            for (const c of texto) {
+                if (c === '{') abiertas++;
+                else if (c === '}') abiertas = Math.max(0, abiertas - 1);
+            }
+            if (abiertas > 0) texto += '}'.repeat(abiertas);
+            // Corregir comandos comunes mal formateados
+            texto = texto.replace(/\\text\s+\{/g, '\\text{');
+            texto = texto.replace(/\\frac\s+\{/g, '\\frac{');
+            texto = texto.replace(/\\sqrt\s+\{/g, '\\sqrt{');
+            texto = texto.replace(/\\left\s*\./g, '\\left.');
+            texto = texto.replace(/\\right\s*\./g, '\\right.');
+            // Doble backslash suelto -> newline LaTeX
+            texto = texto.replace(/\\\\(?![a-zA-Z{(\[])/g, ' \\\\ ');
+            // Balancear \left y \right
+            const lefts = (texto.match(/\\left/g) || []).length;
+            const rights = (texto.match(/\\right/g) || []).length;
+            if (lefts > rights) {
+                for (let i = 0; i < lefts - rights; i++) texto += '\\right.';
+            }
+            // Cerrar $$ y $ truncados
+            const ddCount = (texto.match(/\$\$/g) || []).length;
+            if (ddCount % 2 !== 0) texto += '$$';
+            const sCount = (texto.match(/(?<!\$)\$(?!\$)/g) || []).length;
+            if (sCount % 2 !== 0) texto += '$';
+            return texto;
+        }
+
+        function prepararHTML(texto) {
+            texto = sanitizarLaTeX(texto);
+            // Normalizar delimitadores \(...\) → $...$ y \[...\] → $$...$$
+            texto = texto.replace(/\\\(/g, "$").replace(/\\\)/g, "$");
+            texto = texto.replace(/\\\[/g, "$$").replace(/\\\]/g, "$$");
+
+            // Reemplazar saltos de línea SOLO fuera de bloques LaTeX
+            let result = "";
+            let inBlock = false;
+            let i = 0;
+            while (i < texto.length) {
+                if (!inBlock && texto[i] === "$" && texto[i + 1] === "$") {
+                    inBlock = true; result += "$$"; i += 2; continue;
+                }
+                if (inBlock && texto[i] === "$" && texto[i + 1] === "$") {
+                    inBlock = false; result += "$$"; i += 2; continue;
+                }
+                if (!inBlock && texto[i] === "\n") {
+                    result += "<br>"; i++; continue;
+                }
+                result += texto[i]; i++;
+            }
+            return result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        }
+
+        function copyGptPrompt(btn) {
+            const text = document.getElementById('gptPrompt').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                btn.classList.add('copied');
+                btn.innerHTML = '✓ Copiado!';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = '📋 Copiar Prompt';
+                }, 2000);
+            }).catch(() => {
+                // Fallback for older browsers
+                const ta = document.createElement('textarea');
+                ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                btn.classList.add('copied');
+                btn.innerHTML = '✓ Copiado!';
+                setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '📋 Copiar Prompt'; }, 2000);
+            });
         }
 
         async function pollStatus() {
@@ -331,10 +546,22 @@
                 body.className = "just-body";
                 body.id = "just-body-" + idx;
 
+                // Toolbar with help button
+                const toolbar = document.createElement("div");
+                toolbar.className = "just-toolbar";
+                const helpBtn = document.createElement("button");
+                helpBtn.className = "just-help-btn";
+                helpBtn.innerHTML = '📐 Ayuda LaTeX';
+                helpBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    document.getElementById('helpOverlay').classList.add('open');
+                });
+                toolbar.appendChild(helpBtn);
+
                 const textarea = document.createElement("textarea");
                 textarea.className = "just-textarea";
                 textarea.id = "just-input-" + idx;
-                textarea.placeholder = "Escribí la justificación... (soporta LaTeX: $x^2$, $$\\frac{a}{b}$$)";
+                textarea.placeholder = "Escribí la justificación en LaTeX...\nEj: $$F = ma$$\n$$F = (2)(9.8) = 19.6 \\text{ N}$$\n\nTocá 📐 Ayuda LaTeX para ver cómo hacerlo.";
                 textarea.value = q.justificacion || "";
 
                 const preview = document.createElement("div");
@@ -358,11 +585,14 @@
                 // Auto-save + preview on input
                 textarea.addEventListener("input", () => {
                     const val = textarea.value;
-                    // Preview
+                    // Preview — use prepararHTML pipeline (same as client_fisica)
                     if (val.trim()) {
-                        preview.textContent = val;
+                        preview.innerHTML = "<div style='font-size:13px;line-height:1.8;'>" + prepararHTML(val) + "</div>";
                         preview.style.display = "block";
                         renderMath(preview);
+                        // Multi-pass rendering for complex LaTeX
+                        setTimeout(() => renderMath(preview), 200);
+                        setTimeout(() => renderMath(preview), 600);
                     } else {
                         preview.style.display = "none";
                     }
@@ -374,6 +604,7 @@
                     saveTimers[idx] = setTimeout(() => saveJustificacion(idx, val), 800);
                 });
 
+                body.appendChild(toolbar);
                 body.appendChild(textarea);
                 body.appendChild(preview);
                 body.appendChild(status);
@@ -383,11 +614,13 @@
 
                 container.appendChild(card);
 
-                // Render initial justification preview
+                // Render initial justification preview using prepararHTML pipeline
                 if (q.justificacion) {
-                    preview.textContent = q.justificacion;
+                    preview.innerHTML = "<div style='font-size:13px;line-height:1.8;'>" + prepararHTML(q.justificacion) + "</div>";
                     preview.style.display = "block";
                     setTimeout(() => renderMath(preview), 100);
+                    setTimeout(() => renderMath(preview), 500);
+                    setTimeout(() => renderMath(preview), 1200);
                     // Auto-expand if has content
                     body.classList.add("open");
                     document.getElementById("just-icon-" + idx)?.classList.add("open");
