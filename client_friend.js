@@ -367,9 +367,15 @@
         const src = await buscarImagenPregunta(p);
         let img = null;
         if (src) {
-            try { img = await fetchBase64(src); } catch(e) {
-                console.warn("[Helper] No se pudo cargar imagen P" + (i + 1));
+            console.log("[Helper] P" + (i+1) + " imagen encontrada:", src.slice(0, 80) + "...");
+            try {
+                img = await fetchBase64(src);
+                console.log("[Helper] P" + (i+1) + " base64 OK — " + Math.round(img.base64.length / 1024) + " KB — " + img.mimeType);
+            } catch(e) {
+                console.warn("[Helper] P" + (i+1) + " No se pudo cargar imagen:", e.message);
             }
+        } else {
+            console.log("[Helper] P" + (i+1) + " sin imagen");
         }
         questionData.push({
             enunciado,
