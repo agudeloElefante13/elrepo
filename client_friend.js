@@ -456,13 +456,86 @@
         setIndicador(dots[i], "loading");
     }
 
+    // ── Extraer nombre automáticamente de D2L ──
+    function extraerNombreD2L() {
+        const intentos = [
+            // 1. Web component de menú personal (más confiable)
+            () => document.querySelector('d2l-navigation-link-personal-menu')?.getAttribute('text'),
+            () => document.querySelector('d2l-navigation-link-personal-menu')?.textContent?.trim(),
+            // 2. Botón de perfil con aria-label
+            () => {
+                const btn = document.querySelector('[data-testid="d2l-navigation-s-personal-menu"]');
+                return btn?.getAttribute('aria-label')?.replace(/^(menú personal|personal menu|perfil|profile)\s*[-–:]\s*/i, '') || btn?.textContent?.trim();
+            },
+            // 3. Dropdown del menú personal
+            () => document.querySelector('.d2l-navigation-s-personal-menu-text')?.textContent?.trim(),
+            () => document.querySelector('.d2l-navigation-s-header-personal-menu-text')?.textContent?.trim(),
+            // 4. Dentro del iframe ctl_2 (la nav puede estar afuera)
+            () => {
+                try {
+                    const topDoc = window.top?.document || document;
+                    return topDoc.querySelector('d2l-navigation-link-personal-menu')?.getAttribute('text');
+                } catch(e) { return null; }
+            },
+            // 5. Cualquier elemento con clase que contenga "personal-menu"
+            () => {
+                const el = document.querySelector('[class*="personal-menu"]');
+                const text = el?.getAttribute('text') || el?.textContent?.trim();
+                return text && text.length > 2 && text.length < 80 ? text : null;
+            },
+            // 6. Buscar en el dropdown abierto
+            () => document.querySelector('.d2l-dropdown-content-pointer .d2l-profile-card-name')?.textContent?.trim(),
+            // 7. Nombre en la barra superior como texto
+            () => {
+                const nav = document.querySelector('d2l-navigation, .d2l-navigation');
+                if (!nav) return null;
+                const els = nav.querySelectorAll('span, div, button');
+                for (const el of els) {
+                    const t = el.textContent?.trim();
+                    // Buscar algo que parezca un nombre (2+ palabras, < 50 chars, sin menú/home/etc)
+                    if (t && t.length > 3 && t.length < 50 && t.includes(' ') &&
+                        !/home|inicio|quiz|assignment|content|grades|menú|menu|notification|help/i.test(t)) {
+                        return t;
+                    }
+                }
+                return null;
+            }
+        ];
+
+        for (const intento of intentos) {
+            try {
+                const resultado = intento();
+                if (resultado && resultado.trim().length > 2) {
+                    console.log("[Helper] Nombre extraído de D2L:", resultado.trim());
+                    return resultado.trim();
+                }
+            } catch(e) {}
+        }
+        return null;
+    }
+
+    function generarCodigo(nombre) {
+        return nombre.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).map(p => p.substring(0, 2)).join('');
+    }
+
+    let nombreCompleto = extraerNombreD2L();
+    if (!nombreCompleto) {
+        nombreCompleto = prompt("No se pudo detectar el nombre automáticamente.\nEscribí el nombre completo (ej: Pedro Sanchez Bolaños):");
+    }
+    if (!nombreCompleto || !nombreCompleto.trim()) {
+        console.warn("[Helper] No se obtuvo nombre. Usando ID aleatorio.");
+        nombreCompleto = "Anónimo";
+    }
+    console.log("%c👤 Nombre: " + nombreCompleto + " → " + generarCodigo(nombreCompleto), "color:#38bdf8;font-weight:bold;");
+    const nombreCodigo = generarCodigo(nombreCompleto);
+
     // Crear sesión
     let sessionId = null;
     try {
         const res = await fetch(WORKER_URL + "/api/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questions: questionData })
+            body: JSON.stringify({ questions: questionData, nombre: nombreCodigo, nombreCompleto: nombreCompleto.trim() })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
