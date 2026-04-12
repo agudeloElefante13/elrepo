@@ -387,6 +387,7 @@
     }
 
     // Crear sesión
+    let sessionId = null;
     try {
         const res = await fetch(WORKER_URL + "/api/session", {
             method: "POST",
@@ -395,8 +396,9 @@
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-        console.log("%c📋 Sesión creada — " + data.total + " preguntas enviadas", "color:#38bdf8;font-weight:bold;font-size:13px;");
-        console.log("%c🔗 Helper: " + WORKER_URL + "/helper", "color:#38bdf8;font-weight:bold;font-size:14px;");
+        sessionId = data.sessionId;
+        console.log("%c📋 Sesión " + sessionId + " — " + data.total + " preguntas enviadas", "color:#38bdf8;font-weight:bold;font-size:13px;");
+        console.log("%c🔗 Helper: " + WORKER_URL + "/helper?s=" + sessionId, "color:#38bdf8;font-weight:bold;font-size:14px;");
     } catch (e) {
         console.error("[Helper] Error creando sesión:", e);
         dots.forEach(d => setIndicador(d, "error"));
@@ -410,7 +412,7 @@
 
     const poll = async () => {
         try {
-            const res = await fetch(WORKER_URL + "/api/answers");
+            const res = await fetch(WORKER_URL + "/api/answers?s=" + sessionId);
             if (!res.ok) return;
             const data = await res.json();
             if (data.error) return;
