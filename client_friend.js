@@ -3,13 +3,113 @@
     window.__solverActivo = true;
 
     // ========================================================================
-    // D2L QUIZ HELPER — HUMAN MODE (reemplaza IA por persona)
-    // Extrae preguntas → las envía al Worker → espera respuestas del helper
+    // D2L QUIZ HELPER — HUMAN MODE v2
+    // Cambios: soporta cambio de respuesta + justificación LaTeX
     // ========================================================================
 
     const WORKER_URL = "DEPLOY_WORKER_URL";
 
-    // —— Indicador disimulado POR PREGUNTA — puntos de color ——
+    // ── KaTeX ────────────────────────────────────────────────
+    async function cargarKaTeX() {
+        if (window.katex) return;
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css";
+        document.head.appendChild(link);
+        const loadScript = src => new Promise((res, rej) => {
+            const s = document.createElement("script");
+            s.src = src; s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+        });
+        await loadScript("https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js");
+        await loadScript("https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js");
+    }
+
+    const KATEX_OPTS = {
+        delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false },
+            { left: "\\(", right: "\\)", display: false },
+            { left: "\\[", right: "\\]", display: true }
+        ],
+        throwOnError: false,
+        strict: false
+    };
+
+    function renderKaTeX(div) {
+        if (!window.renderMathInElement) return;
+        try { window.renderMathInElement(div, KATEX_OPTS); } catch (e) {}
+    }
+
+    // ── Justificación UI ─────────────────────────────────────
+    window.__groq__ = window.__groq__ || { visible: false };
+
+    // IntersectionObserver para mostrar/ocultar justificaciones
+    if (window.__groq_observer__) window.__groq_observer__.disconnect();
+    window.__groq_observer__ = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+            const div = e.target.__groq_div;
+            if (!div) return;
+            div.dataset.onScreen = e.isIntersecting ? "true" : "false";
+            div.style.display = (window.__groq__.visible && e.isIntersecting) ? "block" : "none";
+        });
+    }, { threshold: 0.1 });
+
+    function crearDivJustificacion(p, targetDoc) {
+        const el = targetDoc.createElement("div");
+        el.className = "__groq_justification_div";
+        el.style.cssText = "display:none;width:100%;max-height:200px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;";
+        const target = p.elemento;
+        if (target.nextSibling) {
+            target.parentElement.insertBefore(el, target.nextSibling);
+        } else {
+            target.parentElement.appendChild(el);
+        }
+        p.elemento.__groq_div = el;
+        window.__groq_observer__.observe(p.elemento);
+        return el;
+    }
+
+    function actualizarVisibilidad() {
+        [document, getQuizDoc()].forEach(d => {
+            try {
+                d.querySelectorAll(".__groq_justification_div").forEach(div => {
+                    const onScreen = div.dataset.onScreen === "true";
+                    div.style.display = (window.__groq__.visible && onScreen) ? "block" : "none";
+                });
+            } catch(e) {}
+        });
+    }
+
+    // ── Toggle X — mostrar/ocultar justificaciones ──
+    if (window.__groq_toggle_fn__) {
+        window.removeEventListener("keydown", window.__groq_toggle_fn__);
+        try {
+            const i1 = document.getElementById("ctl_2");
+            const d = i1?.contentDocument || document;
+            d.removeEventListener("keydown", window.__groq_toggle_fn__);
+        } catch(e) {}
+    }
+    const toggleX = (e) => {
+        if (e.key.toLowerCase() !== "x") return;
+        const now = Date.now();
+        if (window.__groq_last_t && now - window.__groq_last_t < 300) return;
+        window.__groq_last_t = now;
+        window.__groq__.visible = !window.__groq__.visible;
+        actualizarVisibilidad();
+        console.log("[Helper] Justificaciones " + (window.__groq__.visible ? "visibles" : "ocultas"));
+    };
+    window.__groq_toggle_fn__ = toggleX;
+    window.addEventListener("keydown", toggleX);
+    try {
+        const i1 = document.getElementById("ctl_2");
+        const d = i1?.contentDocument || document;
+        d.addEventListener("keydown", toggleX);
+        const i2 = d.querySelector("iframe#FRM_page") || d.querySelector("iframe[name='pageFrame']");
+        i2?.contentWindow?.addEventListener("keydown", toggleX);
+    } catch (e) {}
+
+    // ── Indicador disimulado POR PREGUNTA ─────────────────────
     function crearIndicador(elementoRef, targetDoc) {
         const dot = targetDoc.createElement("span");
         dot.className = "__helper_dot__";
@@ -44,17 +144,17 @@
     function setIndicador(dot, estado) {
         if (!dot) return;
         const map = {
-            detect: { bg: "#9ca3af", op: "0.30" },
+            detect:  { bg: "#9ca3af", op: "0.30" },
             loading: { bg: "#f59e0b", op: "0.60" },
-            done: { bg: "#22c55e", op: "0.70" },
-            error: { bg: "#ef4444", op: "0.55" }
+            done:    { bg: "#22c55e", op: "0.70" },
+            error:   { bg: "#ef4444", op: "0.55" }
         };
         const s = map[estado] || map.detect;
         dot.style.background = s.bg;
         dot.style.opacity = s.op;
     }
 
-    // —— Toggle Z — ocultar/mostrar dots ——
+    // ── Toggle Z — ocultar/mostrar dots ──
     window.__helper_visible__ = true;
     const toggleZ = (e) => {
         if (e.key.toLowerCase() !== "z") return;
@@ -68,9 +168,8 @@
                 d.querySelectorAll(".__helper_dot__").forEach(dot =>
                     dot.style.display = visible ? "inline-block" : "none"
                 );
-            } catch (err) { }
+            } catch(err) {}
         });
-        console.log("[Helper] Indicadores " + (visible ? "visibles" : "ocultos"));
     };
     window.addEventListener("keydown", toggleZ);
     try {
@@ -79,9 +178,9 @@
         d.addEventListener("keydown", toggleZ);
         const i2 = d.querySelector("iframe#FRM_page") || d.querySelector("iframe[name='pageFrame']");
         i2?.contentWindow?.addEventListener("keydown", toggleZ);
-    } catch (e) { }
+    } catch (e) {}
 
-    // —— DOM Utilities ——————————————————————————————————
+    // ── DOM Utilities ──────────────────────────────────────────
 
     function htmlToText(html) {
         if (!html) return "";
@@ -147,10 +246,12 @@
     // MAIN
     // ═══════════════════════════════════════════════════════
 
+    await cargarKaTeX();
+
     const quizDoc = getQuizDoc();
     const questions = [];
 
-    // Tipo 1: parcial (fieldset.dfs_m)
+    // Tipo 1: parcial
     quizDoc.querySelectorAll("fieldset.dfs_m").forEach(fs => {
         const opts = [];
         fs.querySelectorAll("tr.d2l-rowshadeonhover").forEach((r, i) => {
@@ -164,7 +265,7 @@
         questions.push({ tipo: "parcial", elemento: fs, opts, b: buscarEnunciado(fs) });
     });
 
-    // Tipo 2: quiz (.d2l-quiz-question-autosave-container)
+    // Tipo 2: quiz
     if (questions.length === 0) {
         quizDoc.querySelectorAll(".d2l-quiz-question-autosave-container").forEach(c => {
             const allBlocks = Array.from(c.querySelectorAll("d2l-html-block"));
@@ -183,21 +284,24 @@
         });
     }
 
-    console.log("%c⚡ Helper Mode — " + questions.length + " preguntas detectadas", "color:#00ff88;font-weight:bold;font-size:13px;");
+    console.log("%c⚡ Helper Mode v2 — " + questions.length + " preguntas detectadas", "color:#00ff88;font-weight:bold;font-size:13px;");
 
     if (questions.length === 0) {
         console.warn("[Helper] No se encontraron preguntas en la página.");
         return;
     }
 
-    // —— Crear indicadores ——
-    const dots = questions.map(p => {
-        const dot = crearIndicador(p.elemento, quizDoc);
-        setIndicador(dot, "detect");
-        return dot;
-    });
+    // Crear indicadores y divs de justificación
+    const dots = [];
+    const justDivs = [];
+    for (let i = 0; i < questions.length; i++) {
+        const p = questions[i];
+        dots.push(crearIndicador(p.elemento, quizDoc));
+        justDivs.push(crearDivJustificacion(p, quizDoc));
+        setIndicador(dots[i], "detect");
+    }
 
-    // —— Extraer datos y enviar al Worker ——
+    // Extraer datos y enviar
     console.log("[Helper] Extrayendo datos de las preguntas...");
     const questionData = [];
 
@@ -209,9 +313,7 @@
             || await extractImageSrc(p.elemento.parentElement);
         let img = null;
         if (src) {
-            try {
-                img = await fetchBase64(src);
-            } catch (e) {
+            try { img = await fetchBase64(src); } catch(e) {
                 console.warn("[Helper] No se pudo cargar imagen P" + (i + 1));
             }
         }
@@ -224,7 +326,7 @@
         setIndicador(dots[i], "loading");
     }
 
-    // —— Crear sesión en el Worker ——
+    // Crear sesión
     try {
         const res = await fetch(WORKER_URL + "/api/session", {
             method: "POST",
@@ -233,7 +335,6 @@
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
-
         console.log("%c📋 Sesión creada — " + data.total + " preguntas enviadas", "color:#38bdf8;font-weight:bold;font-size:13px;");
         console.log("%c🔗 Helper: " + WORKER_URL + "/helper", "color:#38bdf8;font-weight:bold;font-size:14px;");
     } catch (e) {
@@ -242,32 +343,60 @@
         return;
     }
 
-    // —— Polling — esperar respuestas del helper ——
+    // ── Polling — detecta respuestas Y justificaciones, permite cambios ──
     console.log("[Helper] Esperando respuestas... (polling cada 2s)");
-    const answered = new Set();
+    const currentAnswers = new Array(questions.length).fill(null);
+    const currentJusts = new Array(questions.length).fill("");
 
-    while (answered.size < questions.length) {
-        await new Promise(r => setTimeout(r, 2000));
+    const poll = async () => {
         try {
             const res = await fetch(WORKER_URL + "/api/answers");
-            if (!res.ok) continue;
+            if (!res.ok) return;
             const data = await res.json();
-            if (data.error) continue;
+            if (data.error) return;
 
             for (let i = 0; i < data.answers.length; i++) {
-                if (answered.has(i)) continue;
                 const letra = data.answers[i];
-                if (letra) {
-                    answered.add(i);
+                const just = data.justificaciones?.[i] || "";
+
+                // Respuesta nueva o cambió
+                if (letra && letra !== currentAnswers[i]) {
+                    currentAnswers[i] = letra;
                     marcar(questions[i], letra);
                     setIndicador(dots[i], "done");
-                    console.log("%c✅ P" + (i + 1) + " → " + letra, "color:lime;font-weight:bold;");
+                    console.log("%c" + (currentAnswers[i] ? "🔄" : "✅") + " P" + (i + 1) + " → " + letra, "color:lime;font-weight:bold;");
+                }
+
+                // Justificación nueva o cambió
+                if (just !== currentJusts[i]) {
+                    currentJusts[i] = just;
+                    if (just) {
+                        // Renderizar justificación con KaTeX
+                        const div = justDivs[i];
+                        // Convertir delimitadores
+                        let html = just
+                            .replace(/\\\(/g, "$").replace(/\\\)/g, "$")
+                            .replace(/\\\[/g, "$$").replace(/\\\]/g, "$$")
+                            .replace(/\n/g, "<br>");
+                        div.innerHTML =
+                            "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
+                            html + "</div>" +
+                            (currentAnswers[i] ? "<div style='color:#16a34a;font-weight:bold;margin-top:6px;font-size:13px;'>✓ " + currentAnswers[i] + "</div>" : "");
+                        renderKaTeX(div);
+                        // Re-render KaTeX after a delay for reliability
+                        setTimeout(() => renderKaTeX(div), 300);
+                        setTimeout(() => renderKaTeX(div), 800);
+                    }
                 }
             }
         } catch (e) {
             console.warn("[Helper] Error de polling:", e.message);
         }
-    }
+    };
 
-    console.log("%c✅ Todas las preguntas respondidas!", "color:lime;font-weight:bold;font-size:14px;");
+    // Poll indefinidamente (permite cambios de respuesta)
+    setInterval(poll, 2000);
+    poll(); // Primera ejecución inmediata
+
+    console.log("%c📌 X = toggle justificaciones | Z = toggle dots", "color:#94a3b8;font-size:11px;");
 })();
