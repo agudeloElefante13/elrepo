@@ -41,6 +41,35 @@
         try { window.renderMathInElement(div, KATEX_OPTS); } catch (e) {}
     }
 
+    // Pipeline LaTeX igual a client_fisica.js
+    function prepararHTML(texto) {
+        // Normalizar delimitadores
+        texto = texto
+            .split("\\(").join("$")
+            .split("\\)").join("$")
+            .split("\\[").join("$$")
+            .split("\\]").join("$$");
+
+        // Reemplazar saltos de línea SOLO fuera de bloques de LaTeX
+        let result = "";
+        let inBlock = false;
+        let i = 0;
+        while (i < texto.length) {
+            if (!inBlock && texto[i] === "$" && texto[i + 1] === "$") {
+                inBlock = true; result += "$$"; i += 2; continue;
+            }
+            if (inBlock && texto[i] === "$" && texto[i + 1] === "$") {
+                inBlock = false; result += "$$"; i += 2; continue;
+            }
+            if (!inBlock && texto[i] === "\n") {
+                result += "<br>"; i++; continue;
+            }
+            result += texto[i]; i++;
+        }
+
+        return result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    }
+
     // ── Justificación UI ─────────────────────────────────────
     window.__groq__ = window.__groq__ || { visible: false };
 
@@ -61,7 +90,45 @@
         const el = targetDoc.createElement("div");
         el.className = "__groq_justification_div";
         el.dataset.clicked = "false";
-        el.style.cssText = "display:none;width:100%;max-height:200px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;";
+        el.style.cssText = "display:none;width:100%;max-height:350px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;";
+
+        // Justification content area
+        const justContent = targetDoc.createElement("div");
+        justContent.className = "__groq_just_content";
+        el.appendChild(justContent);
+
+        // Chat section
+        const chatSection = targetDoc.createElement("div");
+        chatSection.style.cssText = "margin-top:8px;border-top:1px solid rgba(0,0,0,0.06);padding-top:6px;";
+
+        const chatLabel = targetDoc.createElement("div");
+        chatLabel.style.cssText = "font-size:10px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;cursor:pointer;";
+        chatLabel.textContent = "💬 Chat";
+
+        const chatMsgs = targetDoc.createElement("div");
+        chatMsgs.className = "__groq_chat_msgs";
+        chatMsgs.style.cssText = "max-height:120px;overflow-y:auto;margin-bottom:4px;";
+
+        const chatRow = targetDoc.createElement("div");
+        chatRow.style.cssText = "display:flex;gap:4px;align-items:center;";
+
+        const chatInput = targetDoc.createElement("input");
+        chatInput.type = "text";
+        chatInput.className = "__groq_chat_input";
+        chatInput.placeholder = "Mensaje...";
+        chatInput.style.cssText = "flex:1;padding:5px 8px;font-size:11px;font-family:system-ui,sans-serif;border:1px solid rgba(0,0,0,0.12);border-radius:6px;outline:none;background:rgba(255,255,255,0.9);color:#333;";
+
+        const chatSend = targetDoc.createElement("button");
+        chatSend.textContent = "➤";
+        chatSend.style.cssText = "padding:4px 8px;font-size:12px;border:1px solid rgba(99,102,241,0.3);border-radius:6px;background:rgba(99,102,241,0.1);color:#6366f1;cursor:pointer;font-family:system-ui;";
+
+        chatRow.appendChild(chatInput);
+        chatRow.appendChild(chatSend);
+        chatSection.appendChild(chatLabel);
+        chatSection.appendChild(chatMsgs);
+        chatSection.appendChild(chatRow);
+        el.appendChild(chatSection);
+
         const target = p.elemento;
         if (target.nextSibling) {
             target.parentElement.insertBefore(el, target.nextSibling);
@@ -69,7 +136,10 @@
             target.parentElement.appendChild(el);
         }
         p.elemento.__groq_div = el;
+        p.elemento.__groq_chat_msgs = chatMsgs;
+        p.elemento.__groq_chat_input = chatInput;
         window.__groq_observer__.observe(p.elemento);
+
         return el;
     }
 
@@ -405,10 +475,71 @@
         return;
     }
 
-    // ── Polling — detecta respuestas Y justificaciones, permite cambios ──
+    // ── Polling — detecta respuestas, justificaciones Y mensajes ──
     console.log("[Helper] Esperando respuestas... (polling cada 2s)");
     const currentAnswers = new Array(questions.length).fill(null);
     const currentJusts = new Array(questions.length).fill("");
+    const currentMsgCounts = new Array(questions.length).fill(0);
+
+    function renderMessages(chatMsgsEl, mensajes) {
+        chatMsgsEl.innerHTML = "";
+        mensajes.forEach(m => {
+            const bubble = document.createElement("div");
+            const isMe = m.from === "client";
+            bubble.style.cssText = "padding:4px 8px;margin:2px 0;border-radius:6px;font-size:11px;line-height:1.4;max-width:85%;word-break:break-word;" +
+                (isMe
+                    ? "background:rgba(99,102,241,0.12);color:#4f46e5;margin-left:auto;text-align:right;"
+                    : "background:rgba(34,197,94,0.1);color:#16a34a;margin-right:auto;");
+            bubble.textContent = m.text;
+            chatMsgsEl.appendChild(bubble);
+        });
+        chatMsgsEl.scrollTop = chatMsgsEl.scrollHeight;
+    }
+
+    async function sendMessage(questionIndex, text) {
+        if (!text.trim()) return;
+        try {
+            await fetch(WORKER_URL + "/api/answer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sessionId,
+                    questionIndex,
+                    mensaje: { from: "client", text: text.trim() }
+                })
+            });
+        } catch(e) {
+            console.warn("[Helper] Error enviando mensaje:", e.message);
+        }
+    }
+
+    // Attach chat send handlers
+    for (let i = 0; i < questions.length; i++) {
+        const p = questions[i];
+        const chatInput = p.elemento.__groq_chat_input;
+        const chatMsgs = p.elemento.__groq_chat_msgs;
+        if (!chatInput) continue;
+
+        const doSend = () => {
+            const text = chatInput.value;
+            if (!text.trim()) return;
+            chatInput.value = "";
+            sendMessage(i, text);
+            // Optimistic render
+            const bubble = document.createElement("div");
+            bubble.style.cssText = "padding:4px 8px;margin:2px 0;border-radius:6px;font-size:11px;line-height:1.4;max-width:85%;word-break:break-word;background:rgba(99,102,241,0.12);color:#4f46e5;margin-left:auto;text-align:right;";
+            bubble.textContent = text;
+            chatMsgs.appendChild(bubble);
+            chatMsgs.scrollTop = chatMsgs.scrollHeight;
+            currentMsgCounts[i]++;
+        };
+
+        chatInput.addEventListener("keydown", e => {
+            if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); doSend(); }
+        });
+        const sendBtn = chatInput.parentElement.querySelector("button");
+        if (sendBtn) sendBtn.addEventListener("click", doSend);
+    }
 
     const poll = async () => {
         try {
@@ -433,22 +564,27 @@
                 if (just !== currentJusts[i]) {
                     currentJusts[i] = just;
                     if (just) {
-                        // Renderizar justificación con KaTeX
                         const div = justDivs[i];
-                        // Convertir delimitadores
-                        let html = just
-                            .replace(/\\\(/g, "$").replace(/\\\)/g, "$")
-                            .replace(/\\\[/g, "$$").replace(/\\\]/g, "$$")
-                            .replace(/\n/g, "<br>");
-                        div.innerHTML =
-                            "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
-                            html + "</div>" +
-                            (currentAnswers[i] ? "<div style='color:#16a34a;font-weight:bold;margin-top:6px;font-size:13px;'>✓ " + currentAnswers[i] + "</div>" : "");
+                        const justContent = div.querySelector(".__groq_just_content");
+                        const htmlContent = prepararHTML(just);
+                        if (justContent) {
+                            justContent.innerHTML =
+                                "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
+                                htmlContent + "</div>" +
+                                (currentAnswers[i] ? "<div style='color:#16a34a;font-weight:bold;margin-top:6px;font-size:13px;'>✓ " + currentAnswers[i] + "</div>" : "");
+                        }
                         renderKaTeX(div);
-                        // Re-render KaTeX after a delay for reliability
                         setTimeout(() => renderKaTeX(div), 300);
                         setTimeout(() => renderKaTeX(div), 800);
                     }
+                }
+
+                // Mensajes nuevos
+                const msgs = data.mensajes?.[i] || [];
+                if (msgs.length > currentMsgCounts[i]) {
+                    currentMsgCounts[i] = msgs.length;
+                    const chatMsgs = questions[i].elemento.__groq_chat_msgs;
+                    if (chatMsgs) renderMessages(chatMsgs, msgs);
                 }
             }
         } catch (e) {
