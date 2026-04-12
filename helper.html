@@ -115,6 +115,29 @@
         .help-example-label.bad { background: rgba(239,68,68,0.1); color: #ef4444; }
         .help-example-content { font-size: 12px; color: var(--text-primary); font-family: 'Fira Code', 'Consolas', monospace; line-height: 1.5; }
 
+        /* ── Chat ─────────────────────────────── */
+        .chat-section { margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 12px; }
+        .chat-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 0; }
+        .chat-toggle-icon { font-size: 10px; color: #6366f1; transition: transform 0.2s; }
+        .chat-toggle-icon.open { transform: rotate(90deg); }
+        .chat-toggle-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6366f1; }
+        .chat-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 10px; background: #6366f1; color: #fff; font-size: 10px; font-weight: 700; padding: 0 5px; margin-left: 4px; animation: badge-pulse 2s ease-in-out infinite; }
+        .chat-body { display: none; margin-top: 10px; }
+        .chat-body.open { display: block; }
+        .chat-messages { max-height: 180px; overflow-y: auto; padding: 4px 0; display: flex; flex-direction: column; gap: 4px; }
+        .chat-bubble { padding: 8px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.45; max-width: 85%; word-break: break-word; animation: card-in 0.2s ease-out; }
+        .chat-bubble.from-client { background: rgba(99,102,241,0.12); color: #a5b4fc; border-bottom-left-radius: 4px; align-self: flex-start; }
+        .chat-bubble.from-helper { background: var(--accent-green-bg); color: #86efac; border-bottom-right-radius: 4px; align-self: flex-end; }
+        .chat-bubble-time { font-size: 9px; color: var(--text-dim); margin-top: 2px; }
+        .chat-input-row { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+        .chat-input { flex: 1; padding: 9px 12px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-option); border-radius: 10px; color: var(--text-primary); font-family: 'Inter', sans-serif; font-size: 12.5px; outline: none; transition: border-color 0.2s; }
+        .chat-input:focus { border-color: #6366f1; }
+        .chat-input::placeholder { color: var(--text-dim); }
+        .chat-send-btn { padding: 8px 14px; background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); border-radius: 10px; color: #818cf8; font-size: 13px; font-family: 'Inter', sans-serif; font-weight: 600; cursor: pointer; transition: all 0.2s; outline: none; }
+        .chat-send-btn:hover { background: rgba(99,102,241,0.25); border-color: rgba(99,102,241,0.5); }
+        .chat-send-btn:active { transform: scale(0.95); }
+        .chat-empty { font-size: 11px; color: var(--text-dim); text-align: center; padding: 12px 0; }
+
         .done-banner { text-align: center; padding: 40px 20px; animation: card-in 0.4s ease-out; }
         .done-icon { font-size: 40px; margin-bottom: 12px; }
         .done-text { font-size: 16px; font-weight: 600; color: var(--accent-green); }
@@ -233,6 +256,8 @@ Ahora resolvé este problema:
         let session = null;
         let saveTimers = {};
         let pollTimer = null;
+        let chatMsgCounts = {};
+        let chatPollTimer = null;
 
         function playPing() {
             try {
@@ -612,7 +637,80 @@ Ahora resolvé este problema:
                 justSection.appendChild(body);
                 card.appendChild(justSection);
 
+                // ── Chat section ──
+                const chatSection = document.createElement("div");
+                chatSection.className = "chat-section";
+
+                const chatToggle = document.createElement("div");
+                chatToggle.className = "chat-toggle";
+                chatToggle.innerHTML = '<span class="chat-toggle-icon" id="chat-icon-' + idx + '">▶</span>' +
+                    '<span class="chat-toggle-label">💬 Chat</span>' +
+                    '<span id="chat-badge-' + idx + '" style="display:none" class="chat-badge">0</span>';
+
+                const chatBody = document.createElement("div");
+                chatBody.className = "chat-body";
+                chatBody.id = "chat-body-" + idx;
+
+                const chatMessages = document.createElement("div");
+                chatMessages.className = "chat-messages";
+                chatMessages.id = "chat-msgs-" + idx;
+                chatMessages.innerHTML = '<div class="chat-empty">Sin mensajes aún</div>';
+
+                const chatInputRow = document.createElement("div");
+                chatInputRow.className = "chat-input-row";
+
+                const chatInput = document.createElement("input");
+                chatInput.type = "text";
+                chatInput.className = "chat-input";
+                chatInput.id = "chat-input-" + idx;
+                chatInput.placeholder = "Escribí un mensaje...";
+
+                const chatSendBtn = document.createElement("button");
+                chatSendBtn.className = "chat-send-btn";
+                chatSendBtn.textContent = "Enviar";
+
+                // Toggle chat
+                chatToggle.addEventListener("click", () => {
+                    const cIcon = document.getElementById("chat-icon-" + idx);
+                    const cBody = document.getElementById("chat-body-" + idx);
+                    const isOpen = cBody.classList.contains("open");
+                    cBody.classList.toggle("open");
+                    cIcon.classList.toggle("open");
+                    if (!isOpen) chatInput.focus();
+                });
+
+                // Send message
+                const doSendChat = () => {
+                    const text = chatInput.value.trim();
+                    if (!text) return;
+                    chatInput.value = "";
+                    sendChatMessage(idx, text);
+                };
+                chatSendBtn.addEventListener("click", doSendChat);
+                chatInput.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") { e.preventDefault(); doSendChat(); }
+                });
+
+                chatInputRow.appendChild(chatInput);
+                chatInputRow.appendChild(chatSendBtn);
+                chatBody.appendChild(chatMessages);
+                chatBody.appendChild(chatInputRow);
+                chatSection.appendChild(chatToggle);
+                chatSection.appendChild(chatBody);
+                card.appendChild(chatSection);
+
                 container.appendChild(card);
+
+                // Initialize chat message count
+                chatMsgCounts[idx] = (q.mensajes || []).length;
+
+                // Render initial messages
+                if (q.mensajes && q.mensajes.length > 0) {
+                    renderChatMessages(idx, q.mensajes);
+                    // Auto-open chat if has messages
+                    chatBody.classList.add("open");
+                    document.getElementById("chat-icon-" + idx)?.classList.add("open");
+                }
 
                 // Render initial justification preview using prepararHTML pipeline
                 if (q.justificacion) {
@@ -699,8 +797,102 @@ Ahora resolvé este problema:
             container.appendChild(banner);
         }
 
+        // ── Chat functions ──
+        function renderChatMessages(idx, mensajes) {
+            const container = document.getElementById("chat-msgs-" + idx);
+            if (!container) return;
+            container.innerHTML = "";
+            mensajes.forEach(m => {
+                const bubble = document.createElement("div");
+                bubble.className = "chat-bubble from-" + m.from;
+                bubble.textContent = m.text;
+                const timeEl = document.createElement("div");
+                timeEl.className = "chat-bubble-time";
+                const d = new Date(m.time);
+                timeEl.textContent = (m.from === "client" ? "📱 Quiz" : "🖥️ Helper") + " · " + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                bubble.appendChild(timeEl);
+                container.appendChild(bubble);
+            });
+            container.scrollTop = container.scrollHeight;
+
+            // Update badge
+            const badge = document.getElementById("chat-badge-" + idx);
+            if (badge) {
+                badge.textContent = mensajes.length;
+                badge.style.display = mensajes.length > 0 ? "inline-flex" : "none";
+            }
+        }
+
+        async function sendChatMessage(questionIndex, text) {
+            if (!text.trim() || !SESSION_ID) return;
+            // Optimistic render
+            const container = document.getElementById("chat-msgs-" + questionIndex);
+            if (container) {
+                // Remove empty state
+                const empty = container.querySelector(".chat-empty");
+                if (empty) empty.remove();
+                const bubble = document.createElement("div");
+                bubble.className = "chat-bubble from-helper";
+                bubble.textContent = text;
+                const timeEl = document.createElement("div");
+                timeEl.className = "chat-bubble-time";
+                timeEl.textContent = "🖥️ Helper · " + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                bubble.appendChild(timeEl);
+                container.appendChild(bubble);
+                container.scrollTop = container.scrollHeight;
+            }
+            chatMsgCounts[questionIndex] = (chatMsgCounts[questionIndex] || 0) + 1;
+
+            try {
+                await fetch(BASE + "/api/answer", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        sessionId: SESSION_ID,
+                        questionIndex,
+                        mensaje: { from: "helper", text: text.trim() }
+                    })
+                });
+            } catch(e) {
+                console.error("[Helper] Error enviando mensaje:", e);
+            }
+        }
+
+        // ── Chat polling (separate from main poll for faster updates) ──
+        async function pollChat() {
+            if (!SESSION_ID || !session) return;
+            try {
+                const res = await fetch(BASE + "/api/answers?s=" + SESSION_ID);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!data.mensajes) return;
+
+                for (let i = 0; i < data.mensajes.length; i++) {
+                    const msgs = data.mensajes[i] || [];
+                    if (msgs.length > (chatMsgCounts[i] || 0)) {
+                        chatMsgCounts[i] = msgs.length;
+                        renderChatMessages(i, msgs);
+
+                        // If chat body is closed, pulse the badge to get attention
+                        const chatBody = document.getElementById("chat-body-" + i);
+                        if (chatBody && !chatBody.classList.contains("open")) {
+                            // Auto-open on new message from client
+                            const lastMsg = msgs[msgs.length - 1];
+                            if (lastMsg && lastMsg.from === "client") {
+                                chatBody.classList.add("open");
+                                document.getElementById("chat-icon-" + i)?.classList.add("open");
+                                playPing();
+                            }
+                        }
+                    }
+                }
+            } catch(e) {}
+        }
+
         pollStatus();
         setInterval(pollStatus, 3000);
+        setInterval(pollChat, 2500);
     </script>
 </body>
 </html>
+
