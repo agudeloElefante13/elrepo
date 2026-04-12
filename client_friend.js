@@ -51,13 +51,16 @@
             const div = e.target.__groq_div;
             if (!div) return;
             div.dataset.onScreen = e.isIntersecting ? "true" : "false";
-            div.style.display = (window.__groq__.visible && e.isIntersecting) ? "block" : "none";
+            // Mostrar si: global visible O individualmente abierto
+            const shouldShow = e.isIntersecting && (window.__groq__.visible || div.dataset.clicked === "true");
+            div.style.display = shouldShow ? "block" : "none";
         });
     }, { threshold: 0.1 });
 
     function crearDivJustificacion(p, targetDoc) {
         const el = targetDoc.createElement("div");
         el.className = "__groq_justification_div";
+        el.dataset.clicked = "false";
         el.style.cssText = "display:none;width:100%;max-height:200px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;";
         const target = p.elemento;
         if (target.nextSibling) {
@@ -70,12 +73,33 @@
         return el;
     }
 
+    // Click en el enunciado = toggle justificación de ESA pregunta
+    function attachClickToggle(p) {
+        const clickTarget = p.b || p.elemento;
+        clickTarget.style.cursor = "pointer";
+        clickTarget.addEventListener("click", (e) => {
+            // No interceptar clicks en radios/inputs
+            if (e.target.closest("input, label, tr")) return;
+            const div = p.elemento.__groq_div;
+            if (!div || !div.innerHTML.trim()) return;
+            const isOpen = div.dataset.clicked === "true";
+            div.dataset.clicked = isOpen ? "false" : "true";
+            div.style.display = isOpen ? "none" : "block";
+        });
+    }
+
     function actualizarVisibilidad() {
         [document, getQuizDoc()].forEach(d => {
             try {
                 d.querySelectorAll(".__groq_justification_div").forEach(div => {
                     const onScreen = div.dataset.onScreen === "true";
-                    div.style.display = (window.__groq__.visible && onScreen) ? "block" : "none";
+                    if (window.__groq__.visible) {
+                        div.style.display = onScreen ? "block" : "none";
+                    } else {
+                        // Cuando se apaga global, respetar los individuales
+                        const clicked = div.dataset.clicked === "true";
+                        div.style.display = (clicked && onScreen) ? "block" : "none";
+                    }
                 });
             } catch(e) {}
         });
@@ -291,13 +315,14 @@
         return;
     }
 
-    // Crear indicadores y divs de justificación
+    // Crear indicadores, divs de justificación, y click handlers
     const dots = [];
     const justDivs = [];
     for (let i = 0; i < questions.length; i++) {
         const p = questions[i];
         dots.push(crearIndicador(p.elemento, quizDoc));
         justDivs.push(crearDivJustificacion(p, quizDoc));
+        attachClickToggle(p);
         setIndicador(dots[i], "detect");
     }
 
