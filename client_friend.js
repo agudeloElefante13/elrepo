@@ -38,7 +38,7 @@
 
     function renderKaTeX(div) {
         if (!window.renderMathInElement) return;
-        try { window.renderMathInElement(div, KATEX_OPTS); } catch (e) {}
+        try { window.renderMathInElement(div, KATEX_OPTS); } catch (e) { }
     }
 
     // Pipeline LaTeX igual a client_fisica.js
@@ -171,7 +171,7 @@
                         div.style.display = (clicked && onScreen) ? "block" : "none";
                     }
                 });
-            } catch(e) {}
+            } catch (e) { }
         });
     }
 
@@ -182,7 +182,7 @@
             const i1 = document.getElementById("ctl_2");
             const d = i1?.contentDocument || document;
             d.removeEventListener("keydown", window.__groq_toggle_fn__);
-        } catch(e) {}
+        } catch (e) { }
     }
     const toggleX = (e) => {
         if (e.key.toLowerCase() !== "x") return;
@@ -201,7 +201,7 @@
         d.addEventListener("keydown", toggleX);
         const i2 = d.querySelector("iframe#FRM_page") || d.querySelector("iframe[name='pageFrame']");
         i2?.contentWindow?.addEventListener("keydown", toggleX);
-    } catch (e) {}
+    } catch (e) { }
 
     // ── Indicador disimulado POR PREGUNTA ─────────────────────
     function crearIndicador(elementoRef, targetDoc) {
@@ -238,10 +238,10 @@
     function setIndicador(dot, estado) {
         if (!dot) return;
         const map = {
-            detect:  { bg: "#9ca3af", op: "0.30" },
+            detect: { bg: "#9ca3af", op: "0.30" },
             loading: { bg: "#f59e0b", op: "0.60" },
-            done:    { bg: "#22c55e", op: "0.70" },
-            error:   { bg: "#ef4444", op: "0.55" }
+            done: { bg: "#22c55e", op: "0.70" },
+            error: { bg: "#ef4444", op: "0.55" }
         };
         const s = map[estado] || map.detect;
         dot.style.background = s.bg;
@@ -262,7 +262,7 @@
                 d.querySelectorAll(".__helper_dot__").forEach(dot =>
                     dot.style.display = visible ? "inline-block" : "none"
                 );
-            } catch(err) {}
+            } catch (err) { }
         });
     };
     window.addEventListener("keydown", toggleZ);
@@ -272,7 +272,7 @@
         d.addEventListener("keydown", toggleZ);
         const i2 = d.querySelector("iframe#FRM_page") || d.querySelector("iframe[name='pageFrame']");
         i2?.contentWindow?.addEventListener("keydown", toggleZ);
-    } catch (e) {}
+    } catch (e) { }
 
     // ── DOM Utilities ──────────────────────────────────────────
 
@@ -437,15 +437,15 @@
         const src = await buscarImagenPregunta(p);
         let img = null;
         if (src) {
-            console.log("[Helper] P" + (i+1) + " imagen encontrada:", src.slice(0, 80) + "...");
+            console.log("[Helper] P" + (i + 1) + " imagen encontrada:", src.slice(0, 80) + "...");
             try {
                 img = await fetchBase64(src);
-                console.log("[Helper] P" + (i+1) + " base64 OK — " + Math.round(img.base64.length / 1024) + " KB — " + img.mimeType);
-            } catch(e) {
-                console.warn("[Helper] P" + (i+1) + " No se pudo cargar imagen:", e.message);
+                console.log("[Helper] P" + (i + 1) + " base64 OK — " + Math.round(img.base64.length / 1024) + " KB — " + img.mimeType);
+            } catch (e) {
+                console.warn("[Helper] P" + (i + 1) + " No se pudo cargar imagen:", e.message);
             }
         } else {
-            console.log("[Helper] P" + (i+1) + " sin imagen");
+            console.log("[Helper] P" + (i + 1) + " sin imagen");
         }
         questionData.push({
             enunciado,
@@ -460,11 +460,11 @@
     function extraerNombreD2L() {
         // Buscar en todos los documentos posibles (top, iframes)
         const docs = [document];
-        try { if (window.top?.document && window.top.document !== document) docs.push(window.top.document); } catch(e) {}
+        try { if (window.top?.document && window.top.document !== document) docs.push(window.top.document); } catch (e) { }
         try {
             const i1 = document.getElementById("ctl_2");
             if (i1?.contentDocument) docs.push(i1.contentDocument);
-        } catch(e) {}
+        } catch (e) { }
 
         const intentos = [
             // 1. Label "Usuario actual" → siguiente div con el nombre (MÁS CONFIABLE)
@@ -526,7 +526,7 @@
                         console.log("[Helper] Nombre extraído de D2L:", resultado.trim());
                         return resultado.trim();
                     }
-                } catch(e) {}
+                } catch (e) { }
             }
         }
         return null;
@@ -624,7 +624,7 @@
                     mensaje: { from: "client", text: text.trim() }
                 })
             });
-        } catch(e) {
+        } catch (e) {
             console.warn("[Helper] Error enviando mensaje:", e.message);
         }
     }
