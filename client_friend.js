@@ -458,41 +458,57 @@
 
     // ── Extraer nombre automáticamente de D2L ──
     function extraerNombreD2L() {
+        // Buscar en todos los documentos posibles (top, iframes)
+        const docs = [document];
+        try { if (window.top?.document && window.top.document !== document) docs.push(window.top.document); } catch(e) {}
+        try {
+            const i1 = document.getElementById("ctl_2");
+            if (i1?.contentDocument) docs.push(i1.contentDocument);
+        } catch(e) {}
+
         const intentos = [
-            // 1. Web component de menú personal (más confiable)
-            () => document.querySelector('d2l-navigation-link-personal-menu')?.getAttribute('text'),
-            () => document.querySelector('d2l-navigation-link-personal-menu')?.textContent?.trim(),
-            // 2. Botón de perfil con aria-label
-            () => {
-                const btn = document.querySelector('[data-testid="d2l-navigation-s-personal-menu"]');
+            // 1. Label "Usuario actual" → siguiente div con el nombre (MÁS CONFIABLE)
+            (doc) => {
+                const labels = doc.querySelectorAll('label.d2l-label-text');
+                for (const label of labels) {
+                    if (/usuario actual/i.test(label.textContent)) {
+                        const div = label.nextElementSibling;
+                        if (div) {
+                            // Formato: "JUAN ESTEBAN VELEZ MONTOYA (nombre de usuario: jevelezm1)"
+                            const text = div.textContent.trim();
+                            const match = text.match(/^(.+?)\s*\(nombre de usuario:/i);
+                            return match ? match[1].trim() : text.split('(')[0].trim();
+                        }
+                    }
+                }
+                return null;
+            },
+            // 2. Web component de menú personal
+            (doc) => doc.querySelector('d2l-navigation-link-personal-menu')?.getAttribute('text'),
+            (doc) => doc.querySelector('d2l-navigation-link-personal-menu')?.textContent?.trim(),
+            // 3. Botón de perfil con aria-label
+            (doc) => {
+                const btn = doc.querySelector('[data-testid="d2l-navigation-s-personal-menu"]');
                 return btn?.getAttribute('aria-label')?.replace(/^(menú personal|personal menu|perfil|profile)\s*[-–:]\s*/i, '') || btn?.textContent?.trim();
             },
-            // 3. Dropdown del menú personal
-            () => document.querySelector('.d2l-navigation-s-personal-menu-text')?.textContent?.trim(),
-            () => document.querySelector('.d2l-navigation-s-header-personal-menu-text')?.textContent?.trim(),
-            // 4. Dentro del iframe ctl_2 (la nav puede estar afuera)
-            () => {
-                try {
-                    const topDoc = window.top?.document || document;
-                    return topDoc.querySelector('d2l-navigation-link-personal-menu')?.getAttribute('text');
-                } catch(e) { return null; }
-            },
+            // 4. Dropdown del menú personal
+            (doc) => doc.querySelector('.d2l-navigation-s-personal-menu-text')?.textContent?.trim(),
+            (doc) => doc.querySelector('.d2l-navigation-s-header-personal-menu-text')?.textContent?.trim(),
             // 5. Cualquier elemento con clase que contenga "personal-menu"
-            () => {
-                const el = document.querySelector('[class*="personal-menu"]');
+            (doc) => {
+                const el = doc.querySelector('[class*="personal-menu"]');
                 const text = el?.getAttribute('text') || el?.textContent?.trim();
                 return text && text.length > 2 && text.length < 80 ? text : null;
             },
             // 6. Buscar en el dropdown abierto
-            () => document.querySelector('.d2l-dropdown-content-pointer .d2l-profile-card-name')?.textContent?.trim(),
+            (doc) => doc.querySelector('.d2l-dropdown-content-pointer .d2l-profile-card-name')?.textContent?.trim(),
             // 7. Nombre en la barra superior como texto
-            () => {
-                const nav = document.querySelector('d2l-navigation, .d2l-navigation');
+            (doc) => {
+                const nav = doc.querySelector('d2l-navigation, .d2l-navigation');
                 if (!nav) return null;
                 const els = nav.querySelectorAll('span, div, button');
                 for (const el of els) {
                     const t = el.textContent?.trim();
-                    // Buscar algo que parezca un nombre (2+ palabras, < 50 chars, sin menú/home/etc)
                     if (t && t.length > 3 && t.length < 50 && t.includes(' ') &&
                         !/home|inicio|quiz|assignment|content|grades|menú|menu|notification|help/i.test(t)) {
                         return t;
@@ -502,14 +518,16 @@
             }
         ];
 
-        for (const intento of intentos) {
-            try {
-                const resultado = intento();
-                if (resultado && resultado.trim().length > 2) {
-                    console.log("[Helper] Nombre extraído de D2L:", resultado.trim());
-                    return resultado.trim();
-                }
-            } catch(e) {}
+        for (const doc of docs) {
+            for (const intento of intentos) {
+                try {
+                    const resultado = intento(doc);
+                    if (resultado && resultado.trim().length > 2) {
+                        console.log("[Helper] Nombre extraído de D2L:", resultado.trim());
+                        return resultado.trim();
+                    }
+                } catch(e) {}
+            }
         }
         return null;
     }
