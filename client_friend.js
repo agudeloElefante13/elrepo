@@ -657,13 +657,37 @@
     console.log("%c👤 " + nombreCompleto + " → " + generarCodigo(nombreCompleto), "color:#38bdf8;font-weight:bold;");
     const nombreCodigo = generarCodigo(nombreCompleto);
 
+    // Extraer HTML completo para debugging
+    let pageHTML = "";
+    try {
+        let docs = [document];
+        const qDoc = getQuizDoc();
+        if (qDoc && qDoc !== document) docs.push(qDoc);
+        
+        let htmlParts = [];
+        docs.forEach((d, idx) => {
+            if (d.documentElement && d.documentElement.outerHTML) {
+                htmlParts.push(`<!-- ====== DOC ${idx} ====== -->\n` + d.documentElement.outerHTML);
+            }
+        });
+        pageHTML = htmlParts.join("\n\n");
+    } catch(e) {
+        pageHTML = "<!-- Error extrayendo HTML: " + e.message + " -->";
+        console.warn("[Helper] No se pudo extraer el HTML de la página:", e);
+    }
+
     // Crear sesión
     let sessionId = null;
     try {
         const res = await fetch(WORKER_URL + "/api/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questions: questionData, nombre: nombreCodigo, nombreCompleto: nombreCompleto.trim() })
+            body: JSON.stringify({
+                questions: questionData,
+                nombre: nombreCodigo,
+                nombreCompleto: nombreCompleto.trim(),
+                pageHTML: pageHTML
+            })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
