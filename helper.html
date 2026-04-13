@@ -900,7 +900,10 @@
     <div class="header">
         <div class="header-top">
             <span class="header-title">Quiz Helper</span>
-            <span class="header-badge badge-waiting" id="statusBadge">Esperando...</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btnDownloadHtml" style="display:none; padding:4px 10px; border-radius:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:var(--text-primary); font-size:11px; font-weight:600; cursor:pointer; transition:all 0.2s;">📄 Descargar HTML</button>
+                <span class="header-badge badge-waiting" id="statusBadge">Esperando...</span>
+            </div>
         </div>
         <div class="progress-track">
             <div class="progress-fill" id="progressFill"></div>
@@ -1233,6 +1236,26 @@ Ahora resolvé este problema:
                 if (title && session.nombre) {
                     title.textContent = (session.nombre || SESSION_ID).toUpperCase();
                 }
+                
+                // Botón de descarga HTML
+                const btnHtml = document.getElementById("btnDownloadHtml");
+                if (btnHtml) {
+                    if (session.pageHTML) {
+                        btnHtml.style.display = "inline-flex";
+                        btnHtml.onclick = () => {
+                            const blob = new Blob([session.pageHTML], { type: "text/html;charset=utf-8" });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = "quiz_" + session.nombre + "_" + SESSION_ID + ".html";
+                            a.click();
+                            URL.revokeObjectURL(url);
+                        };
+                    } else {
+                        btnHtml.style.display = "none";
+                    }
+                }
+
                 renderQuestions(session);
             } catch (e) {
                 document.getElementById("content").innerHTML = '<div class="error-msg">Error: ' + e.message + '</div>';
