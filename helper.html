@@ -1227,9 +1227,11 @@ Ahora resolvé este problema:
 
         async function loadFullSession() {
             try {
+                console.log("[Helper Debug] Fetching full session: " + SESSION_ID);
                 const res = await fetch(BASE + "/api/session?s=" + SESSION_ID);
-                if (!res.ok) { showWaiting(); return; }
+                if (!res.ok) { console.warn("[Helper Debug] fetch no fue ok"); showWaiting(); return; }
                 session = await res.json();
+                console.log("[Helper Debug] Sesion data recibida. ¿Tiene pageHTML?:", !!session.pageHTML, " | Tipo:", typeof session.pageHTML);
                 // Update header with nombre
                 const title = document.querySelector(".header-title");
                 if (title && session.nombre) {
