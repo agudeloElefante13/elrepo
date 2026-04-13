@@ -1196,16 +1196,15 @@ Ahora resolvé este problema:
                     const agoText = ago < 1 ? "ahora" : ago + " min";
                     const pct = s.total > 0 ? Math.round((s.answered / s.total) * 100) : 0;
                     const displayName = (s.nombre || s.id).toUpperCase();
-                    html += '<div class="question-card" style="cursor:pointer;transition:all 0.2s;" ' +
+                    html += '<div class="question-card" style="transition:all 0.2s; border:1px solid var(--border-subtle);" ' +
                         'onmouseenter="this.style.borderColor=\'rgba(59,130,246,0.5)\'" ' +
-                        'onmouseleave="this.style.borderColor=\'rgba(255,255,255,0.06)\'" ' +
-                        'onclick="selectSession(\'' + s.id + '\')">' +
+                        'onmouseleave="this.style.borderColor=\'var(--border-subtle)\'">' +
                         '<div style="display:flex;align-items:center;justify-content:space-between;">' +
-                        '<div>' +
+                        '<div onclick="selectSession(\'' + s.id + '\')" style="flex:1; cursor:pointer;">' +
                         '<div style="font-size:18px;font-weight:700;letter-spacing:0.05em;color:var(--accent-blue);">' + displayName + '</div>' +
                         '<div style="font-size:11px;color:var(--text-dim);margin-top:3px;">' + s.total + ' preguntas · hace ' + agoText + '</div>' +
                         '</div>' +
-                        '<div style="text-align:right;">' +
+                        '<div style="text-align:right; cursor:pointer;" onclick="selectSession(\'' + s.id + '\')">' +
                         '<div style="font-size:22px;font-weight:700;color:' + (pct >= 100 ? 'var(--accent-green)' : 'var(--text-primary)') + ';">' + pct + '%</div>' +
                         '<div style="font-size:10px;color:var(--text-dim);">' + s.answered + '/' + s.total + '</div>' +
                         '</div></div></div>';
@@ -1240,9 +1239,9 @@ Ahora resolvé este problema:
                 // Botón de descarga HTML
                 const btnHtml = document.getElementById("btnDownloadHtml");
                 if (btnHtml) {
-                    if (session.pageHTML) {
-                        btnHtml.style.display = "inline-flex";
-                        btnHtml.onclick = () => {
+                    btnHtml.style.display = "inline-flex";
+                    btnHtml.onclick = () => {
+                        if (session.pageHTML) {
                             const blob = new Blob([session.pageHTML], { type: "text/html;charset=utf-8" });
                             const url = URL.createObjectURL(blob);
                             const a = document.createElement("a");
@@ -1250,10 +1249,10 @@ Ahora resolvé este problema:
                             a.download = "quiz_" + session.nombre + "_" + SESSION_ID + ".html";
                             a.click();
                             URL.revokeObjectURL(url);
-                        };
-                    } else {
-                        btnHtml.style.display = "none";
-                    }
+                        } else {
+                            alert("¡Atención! Para descargar el HTML es necesario que el estudiante inicie una NUEVA sesión ejecutando el script (client_friend.js) actualizado. Las sesiones antiguas no tienen el HTML guardado.");
+                        }
+                    };
                 }
 
                 renderQuestions(session);
@@ -1671,6 +1670,35 @@ Ahora resolvé este problema:
                     }
                 }
             } catch (e) { }
+        }
+
+        async function downloadSessionHtml(id, e) {
+            e.stopPropagation();
+            const btn = e.currentTarget;
+            const originText = btn.innerHTML;
+            btn.innerHTML = "⏳...";
+            try {
+                const res = await fetch(BASE + "/api/session?s=" + id);
+                if (!res.ok) throw new Error("Error de red");
+                const sess = await res.json();
+                if (sess.pageHTML) {
+                    const blob = new Blob([sess.pageHTML], { type: "text/html;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "quiz_" + (sess.nombre || id).toUpperCase() + "_" + id + ".html";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    btn.innerHTML = "✓ Descargado";
+                } else {
+                    alert("Esta sesión no tiene HTML guardado.");
+                    btn.innerHTML = "❌ No HTML";
+                }
+            } catch (err) {
+                alert("Error bajando HTML: " + err.message);
+                btn.innerHTML = "❌ Error";
+            }
+            setTimeout(() => { if(btn) btn.innerHTML = originText; }, 2500);
         }
 
         pollStatus();
