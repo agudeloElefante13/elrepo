@@ -671,14 +671,16 @@
             }
         });
         pageHTML = htmlParts.join("\n\n");
+        console.log("[Helper Debug] HTML extraído exitosamente, tamaño:", pageHTML.length, "bytes");
     } catch(e) {
         pageHTML = "<!-- Error extrayendo HTML: " + e.message + " -->";
-        console.warn("[Helper] No se pudo extraer el HTML de la página:", e);
+        console.warn("[Helper Debug] No se pudo extraer el HTML de la página:", e);
     }
 
     // Crear sesión
     let sessionId = null;
     try {
+        console.log("[Helper Debug] Creando sesión, enviando POST con pageHTML de", pageHTML.length, "bytes...");
         const res = await fetch(WORKER_URL + "/api/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
