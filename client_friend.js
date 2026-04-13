@@ -660,18 +660,36 @@
     // Extraer HTML completo para debugging
     let pageHTML = "";
     try {
-        let docs = [document];
-        const qDoc = getQuizDoc();
-        if (qDoc && qDoc !== document) docs.push(qDoc);
+        let parentClone = document.documentElement.cloneNode(true);
         
-        let htmlParts = [];
-        docs.forEach((d, idx) => {
-            if (d.documentElement && d.documentElement.outerHTML) {
-                htmlParts.push(`<!-- ====== DOC ${idx} ====== -->\n` + d.documentElement.outerHTML);
+        // 1. Inyectar <base> para que el CSS / recursos estáticos (que tienen URLs relativas) carguen desde el D2L original
+        let base = document.createElement('base');
+        base.href = window.location.origin;
+        const head = parentClone.querySelector('head');
+        if (head) head.prepend(base);
+
+        // 2. Si D2L metió el quiz en un iframe, el Iframe original vendrá hueco en el clone. Vamos a empaquetarlo.
+        const qDoc = getQuizDoc();
+        if (qDoc && qDoc !== document) {
+            // Buscar el iframe dentro del clon que corresponda
+            const iframeClone = parentClone.querySelector('iframe[name="contentFrame"], iframe.d2l-iframe, iframe');
+            if (iframeClone && qDoc.documentElement) {
+                let innerClone = qDoc.documentElement.cloneNode(true);
+                let innerBase = document.createElement('base');
+                innerBase.href = window.location.origin;
+                const innerHead = innerClone.querySelector('head');
+                if (innerHead) innerHead.prepend(innerBase);
+                
+                iframeClone.removeAttribute('src'); // Evitar que redireccione o dé error
+                // Inyectamos todo el sub-html dentro del atributo srcdoc
+                iframeClone.setAttribute('srcdoc', innerClone.outerHTML);
+                // Expandimos el iframe para que esté completamente visible sin scroll absurdo
+                iframeClone.style.height = "2500px"; 
             }
-        });
-        pageHTML = htmlParts.join("\n\n");
-        console.log("[Helper Debug] HTML extraído exitosamente, tamaño:", pageHTML.length, "bytes");
+        }
+        
+        pageHTML = "<!DOCTYPE html>\n" + parentClone.outerHTML;
+        console.log("[Helper Debug] HTML empaquetado estilo Ctrl+S exitosamente. Tamaño:", pageHTML.length, "bytes");
     } catch(e) {
         pageHTML = "<!-- Error extrayendo HTML: " + e.message + " -->";
         console.warn("[Helper Debug] No se pudo extraer el HTML de la página:", e);
