@@ -550,13 +550,120 @@
         setIndicador(dots[i], "loading");
     }
 
+    // ── Extraer nombre automáticamente de D2L ──
+    function extraerNombreD2L() {
+        // Buscar en todos los documentos posibles (top, iframes)
+        const docs = [document];
+        try { if (window.top?.document && window.top.document !== document) docs.push(window.top.document); } catch(e) {}
+        try {
+            const i1 = document.getElementById("ctl_2");
+            if (i1?.contentDocument) docs.push(i1.contentDocument);
+        } catch(e) {}
+
+        const intentos = [
+            // 1. Label "Usuario actual" → siguiente div con el nombre (MÁS CONFIABLE)
+            (doc) => {
+                const labels = doc.querySelectorAll('label.d2l-label-text');
+                for (const label of labels) {
+                    if (/usuario actual/i.test(label.textContent)) {
+                        const div = label.nextElementSibling;
+                        if (div) {
+                            // Formato: "JUAN ESTEBAN VELEZ MONTOYA (nombre de usuario: jevelezm1)"
+                            const text = div.textContent.trim();
+                            const match = text.match(/^(.+?)\s*\(nombre de usuario:/i);
+                            return match ? match[1].trim() : text.split('(')[0].trim();
+                        }
+                    }
+                }
+                return null;
+            },
+            // 2. Web component de menú personal
+            (doc) => doc.querySelector('d2l-navigation-link-personal-menu')?.getAttribute('text'),
+            (doc) => doc.querySelector('d2l-navigation-link-personal-menu')?.textContent?.trim(),
+            // 3. Botón de perfil con aria-label
+            (doc) => {
+                const btn = doc.querySelector('[data-testid="d2l-navigation-s-personal-menu"]');
+                return btn?.getAttribute('aria-label')?.replace(/^(menú personal|personal menu|perfil|profile)\s*[-–:]\s*/i, '') || btn?.textContent?.trim();
+            },
+            // 4. Dropdown del menú personal
+            (doc) => doc.querySelector('.d2l-navigation-s-personal-menu-text')?.textContent?.trim(),
+            (doc) => doc.querySelector('.d2l-navigation-s-header-personal-menu-text')?.textContent?.trim(),
+            // 5. Cualquier elemento con clase que contenga "personal-menu"
+            (doc) => {
+                const el = doc.querySelector('[class*="personal-menu"]');
+                const text = el?.getAttribute('text') || el?.textContent?.trim();
+                return text && text.length > 2 && text.length < 80 ? text : null;
+            },
+            // 6. Buscar en el dropdown abierto
+            (doc) => doc.querySelector('.d2l-dropdown-content-pointer .d2l-profile-card-name')?.textContent?.trim(),
+            // 7. Nombre en la barra superior como texto
+            (doc) => {
+                const nav = doc.querySelector('d2l-navigation, .d2l-navigation');
+                if (!nav) return null;
+                const els = nav.querySelectorAll('span, div, button');
+                for (const el of els) {
+                    const t = el.textContent?.trim();
+                    if (t && t.length > 3 && t.length < 50 && t.includes(' ') &&
+                        !/home|inicio|quiz|assignment|content|grades|menú|menu|notification|help/i.test(t)) {
+                        return t;
+                    }
+                }
+                return null;
+            }
+        ];
+
+        for (const doc of docs) {
+            for (const intento of intentos) {
+                try {
+                    const resultado = intento(doc);
+                    if (resultado && resultado.trim().length > 2) {
+                        console.log("[Helper] Nombre extraído de D2L:", resultado.trim());
+                        return resultado.trim();
+                    }
+                } catch(e) {}
+            }
+        }
+        return null;
+    }
+
+    function generarCodigo(nombre) {
+        return nombre.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).map(p => p.substring(0, 2)).join('');
+    }
+
+    let nombreCompleto = extraerNombreD2L();
+    if (!nombreCompleto) {
+        // Input disimulado en el footer del quiz, parece metadata de D2L
+        nombreCompleto = await new Promise((resolve) => {
+            const targetDoc = getQuizDoc();
+            const footer = targetDoc.createElement("div");
+            footer.style.cssText = "padding:6px 10px;margin-top:12px;font-size:10px;color:#999;font-family:'D2L',system-ui,sans-serif;display:flex;align-items:center;gap:6px;border-top:1px solid #e5e5e5;";
+            const lbl = targetDoc.createElement("span");
+            lbl.textContent = "Session user:";
+            const inp = targetDoc.createElement("input");
+            inp.style.cssText = "border:none;border-bottom:1px solid #ccc;background:transparent;font-size:10px;color:#777;font-family:inherit;outline:none;padding:1px 4px;width:140px;";
+            inp.placeholder = "full name";
+            footer.appendChild(lbl);
+            footer.appendChild(inp);
+            targetDoc.body.appendChild(footer);
+            inp.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" && inp.value.trim()) { footer.remove(); resolve(inp.value.trim()); }
+            });
+            inp.addEventListener("blur", () => {
+                if (inp.value.trim()) { footer.remove(); resolve(inp.value.trim()); }
+            });
+        });
+    }
+    if (!nombreCompleto) nombreCompleto = "Anónimo";
+    console.log("%c👤 " + nombreCompleto + " → " + generarCodigo(nombreCompleto), "color:#38bdf8;font-weight:bold;");
+    const nombreCodigo = generarCodigo(nombreCompleto);
+
     // Crear sesión
     let sessionId = null;
     try {
         const res = await fetch(WORKER_URL + "/api/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questions: questionData })
+            body: JSON.stringify({ questions: questionData, nombre: nombreCodigo, nombreCompleto: nombreCompleto.trim() })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
