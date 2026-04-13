@@ -38,19 +38,85 @@
 
     function renderKaTeX(div) {
         if (!window.renderMathInElement) return;
-        try { window.renderMathInElement(div, KATEX_OPTS); } catch (e) { }
+        try { window.renderMathInElement(div, KATEX_OPTS); } catch (e) {}
     }
 
-    // Pipeline LaTeX igual a client_fisica.js
+    // ── LaTeX Utilities (Ported from helper.html) ──────────
+    function unicodeToLaTeX(texto) {
+        const map = [
+            ['π', '\\pi'], ['θ', '\\theta'], ['α', '\\alpha'], ['β', '\\beta'],
+            ['γ', '\\gamma'], ['δ', '\\delta'], ['ε', '\\varepsilon'], ['λ', '\\lambda'],
+            ['μ', '\\mu'], ['σ', '\\sigma'], ['ω', '\\omega'], ['φ', '\\varphi'],
+            ['τ', '\\tau'], ['ρ', '\\rho'], ['Σ', '\\Sigma'], ['Δ', '\\Delta'],
+            ['Ω', '\\Omega'], ['Φ', '\\Phi'],
+            ['∫', '\\int'], ['∞', '\\infty'], ['√', '\\sqrt'],
+            ['±', '\\pm'], ['∓', '\\mp'], ['×', '\\times'], ['÷', '\\div'],
+            ['·', '\\cdot'], ['≈', '\\approx'], ['≠', '\\neq'], ['≤', '\\leq'],
+            ['≥', '\\geq'], ['→', '\\to'], ['⇒', '\\Rightarrow'], ['←', '\\leftarrow'],
+            ['∂', '\\partial'], ['∇', '\\nabla'], ['∑', '\\sum'], ['∏', '\\prod'],
+            ['°', '^{\\circ}'], ['′', "'"],
+            ['½', '\\frac{1}{2}'], ['⅓', '\\frac{1}{3}'], ['¼', '\\frac{1}{4}'],
+            ['⅔', '\\frac{2}{3}'], ['¾', '\\frac{3}{4}']
+        ];
+        for (const [uni, latex] of map) {
+            texto = texto.split(uni).join(latex);
+        }
+        return texto;
+    }
+
+    function sanitizarLaTeX(texto) {
+        if (!texto) return "";
+        texto = unicodeToLaTeX(texto);
+        
+        // Balancear llaves
+        let abiertas = 0;
+        for (const c of texto) {
+            if (c === '{') abiertas++;
+            else if (c === '}') abiertas = Math.max(0, abiertas - 1);
+        }
+        if (abiertas > 0) texto += '}'.repeat(abiertas);
+
+        // Corregir comandos comunes
+        texto = texto.replace(/\\text\s+\{/g, '\\text{');
+        texto = texto.replace(/\\frac\s+\{/g, '\\frac{');
+        texto = texto.replace(/\\sqrt\s+\{/g, '\\sqrt{');
+        texto = texto.replace(/\\left\s*\./g, '\\left.');
+        texto = texto.replace(/\\right\s*\./g, '\\right.');
+        
+        // Cerrar $$ y $ truncados
+        const ddCount = (texto.match(/\$\$/g) || []).length;
+        if (ddCount % 2 !== 0) texto += '$$';
+        const sCount = (texto.match(/(?<!\$)\$(?!\$)/g) || []).length;
+        if (sCount % 2 !== 0) texto += '$';
+        
+        return texto;
+    }
+
     function prepararHTML(texto) {
-        // Normalizar delimitadores
+        if (!texto) return "";
+        
+        // 1. Limpieza inicial
+        texto = sanitizarLaTeX(texto);
+
+        // 2. Normalizar delimitadores \(...\) -> $ y \[...\] -> $$
         texto = texto
             .split("\\(").join("$")
             .split("\\)").join("$")
             .split("\\[").join("$$")
             .split("\\]").join("$$");
 
-        // Reemplazar saltos de línea SOLO fuera de bloques de LaTeX
+        // 3. Filtrado para "Solo LaTeX" (Evitar duplicados)
+        // Si el texto contiene bloques $$, extraemos solo esos bloques para evitar el texto plano redundante a la izquierda.
+        if (texto.includes("$$")) {
+            const regexBlocks = /(\$\$.*?\$\$)/gs;
+            const matches = [...texto.matchAll(regexBlocks)];
+            if (matches.length > 0) {
+                // Si encontramos bloques, retornamos solo esos bloques unidos
+                return matches.map(m => m[0]).join("<br>");
+            }
+        }
+
+        // 4. Si no hay bloques $$ o el filtrado no aplicó, procesamos normalmente (Markdown + saltos)
         let result = "";
         let inBlock = false;
         let i = 0;
@@ -171,7 +237,7 @@
                         div.style.display = (clicked && onScreen) ? "block" : "none";
                     }
                 });
-            } catch (e) { }
+            } catch(e) {}
         });
     }
 
@@ -182,7 +248,7 @@
             const i1 = document.getElementById("ctl_2");
             const d = i1?.contentDocument || document;
             d.removeEventListener("keydown", window.__groq_toggle_fn__);
-        } catch (e) { }
+        } catch(e) {}
     }
     const toggleX = (e) => {
         if (e.key.toLowerCase() !== "x") return;
@@ -201,7 +267,7 @@
         d.addEventListener("keydown", toggleX);
         const i2 = d.querySelector("iframe#FRM_page") || d.querySelector("iframe[name='pageFrame']");
         i2?.contentWindow?.addEventListener("keydown", toggleX);
-    } catch (e) { }
+    } catch (e) {}
 
     // ── Indicador disimulado POR PREGUNTA ─────────────────────
     function crearIndicador(elementoRef, targetDoc) {
@@ -238,10 +304,11 @@
     function setIndicador(dot, estado) {
         if (!dot) return;
         const map = {
-            detect: { bg: "#9ca3af", op: "0.30" },
+            detect:  { bg: "#9ca3af", op: "0.30" },
             loading: { bg: "#f59e0b", op: "0.60" },
-            done: { bg: "#22c55e", op: "0.70" },
-            error: { bg: "#ef4444", op: "0.55" }
+            done:    { bg: "#22c55e", op: "0.70" },
+            graph:   { bg: "#38bdf8", op: "0.80" }, // Color azul para gráficas
+            error:   { bg: "#ef4444", op: "0.55" }
         };
         const s = map[estado] || map.detect;
         dot.style.background = s.bg;
@@ -262,7 +329,7 @@
                 d.querySelectorAll(".__helper_dot__").forEach(dot =>
                     dot.style.display = visible ? "inline-block" : "none"
                 );
-            } catch (err) { }
+            } catch(err) {}
         });
     };
     window.addEventListener("keydown", toggleZ);
@@ -272,7 +339,7 @@
         d.addEventListener("keydown", toggleZ);
         const i2 = d.querySelector("iframe#FRM_page") || d.querySelector("iframe[name='pageFrame']");
         i2?.contentWindow?.addEventListener("keydown", toggleZ);
-    } catch (e) { }
+    } catch (e) {}
 
     // ── DOM Utilities ──────────────────────────────────────────
 
@@ -298,8 +365,20 @@
     async function extractImageSrc(el) {
         if (!el) return null;
         for (let t = 0; t < 8; t++) {
+            // 1. Buscar en el renderizado
             const img = el.querySelector("div.d2l-html-block-rendered img") || el.querySelector("img");
             if (img) return img.getAttribute("src");
+
+            // 2. Buscar en el atributo "html" del bloque (si es uno o contiene uno)
+            const block = el.tagName?.toLowerCase() === "d2l-html-block" ? el : el.querySelector("d2l-html-block");
+            const h = block?.getAttribute("html");
+            if (h) {
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = h;
+                const i = tempDiv.querySelector("img");
+                if (i) return i.getAttribute("src");
+            }
+
             await new Promise(r => setTimeout(r, 200));
         }
         return null;
@@ -332,6 +411,21 @@
         // 5. Parent del container
         src = await extractImageSrc(p.elemento.parentElement);
         if (src) return src;
+
+        // 6. Búsqueda profunda: parsear atributo html de todos los d2l-html-block internos
+        const allBlocks = [
+            ...Array.from(p.elemento.querySelectorAll("d2l-html-block")),
+            ...Array.from(p.elemento.parentElement?.querySelectorAll("d2l-html-block") || [])
+        ];
+        for (const b of allBlocks) {
+            const h = b.getAttribute("html");
+            if (h) {
+                const tempDiv = document.createElement("div");
+                tempDiv.innerHTML = h;
+                const i = tempDiv.querySelector("img");
+                if (i) return i.getAttribute("src");
+            }
+        }
 
         return null;
     }
@@ -437,15 +531,15 @@
         const src = await buscarImagenPregunta(p);
         let img = null;
         if (src) {
-            console.log("[Helper] P" + (i + 1) + " imagen encontrada:", src.slice(0, 80) + "...");
+            console.log("[Helper] P" + (i+1) + " imagen encontrada:", src.slice(0, 80) + "...");
             try {
                 img = await fetchBase64(src);
-                console.log("[Helper] P" + (i + 1) + " base64 OK — " + Math.round(img.base64.length / 1024) + " KB — " + img.mimeType);
-            } catch (e) {
-                console.warn("[Helper] P" + (i + 1) + " No se pudo cargar imagen:", e.message);
+                console.log("[Helper] P" + (i+1) + " base64 OK — " + Math.round(img.base64.length / 1024) + " KB — " + img.mimeType);
+            } catch(e) {
+                console.warn("[Helper] P" + (i+1) + " No se pudo cargar imagen:", e.message);
             }
         } else {
-            console.log("[Helper] P" + (i + 1) + " sin imagen");
+            console.log("[Helper] P" + (i+1) + " sin imagen");
         }
         questionData.push({
             enunciado,
@@ -456,129 +550,13 @@
         setIndicador(dots[i], "loading");
     }
 
-    // ── Extraer nombre automáticamente de D2L ──
-    function extraerNombreD2L() {
-        // Buscar en todos los documentos posibles (top, iframes)
-        const docs = [document];
-        try { if (window.top?.document && window.top.document !== document) docs.push(window.top.document); } catch (e) { }
-        try {
-            const i1 = document.getElementById("ctl_2");
-            if (i1?.contentDocument) docs.push(i1.contentDocument);
-        } catch (e) { }
-
-        const intentos = [
-            // 1. Label "Usuario actual" → siguiente div con el nombre (MÁS CONFIABLE)
-            (doc) => {
-                const labels = doc.querySelectorAll('label.d2l-label-text');
-                for (const label of labels) {
-                    if (/usuario actual/i.test(label.textContent)) {
-                        const div = label.nextElementSibling;
-                        if (div) {
-                            // Formato: "JUAN ESTEBAN VELEZ MONTOYA (nombre de usuario: jevelezm1)"
-                            const text = div.textContent.trim();
-                            const match = text.match(/^(.+?)\s*\(nombre de usuario:/i);
-                            return match ? match[1].trim() : text.split('(')[0].trim();
-                        }
-                    }
-                }
-                return null;
-            },
-            // 2. Web component de menú personal
-            (doc) => doc.querySelector('d2l-navigation-link-personal-menu')?.getAttribute('text'),
-            (doc) => doc.querySelector('d2l-navigation-link-personal-menu')?.textContent?.trim(),
-            // 3. Botón de perfil con aria-label
-            (doc) => {
-                const btn = doc.querySelector('[data-testid="d2l-navigation-s-personal-menu"]');
-                return btn?.getAttribute('aria-label')?.replace(/^(menú personal|personal menu|perfil|profile)\s*[-–:]\s*/i, '') || btn?.textContent?.trim();
-            },
-            // 4. Dropdown del menú personal
-            (doc) => doc.querySelector('.d2l-navigation-s-personal-menu-text')?.textContent?.trim(),
-            (doc) => doc.querySelector('.d2l-navigation-s-header-personal-menu-text')?.textContent?.trim(),
-            // 5. Cualquier elemento con clase que contenga "personal-menu"
-            (doc) => {
-                const el = doc.querySelector('[class*="personal-menu"]');
-                const text = el?.getAttribute('text') || el?.textContent?.trim();
-                return text && text.length > 2 && text.length < 80 ? text : null;
-            },
-            // 6. Buscar en el dropdown abierto
-            (doc) => doc.querySelector('.d2l-dropdown-content-pointer .d2l-profile-card-name')?.textContent?.trim(),
-            // 7. Nombre en la barra superior como texto
-            (doc) => {
-                const nav = doc.querySelector('d2l-navigation, .d2l-navigation');
-                if (!nav) return null;
-                const els = nav.querySelectorAll('span, div, button');
-                for (const el of els) {
-                    const t = el.textContent?.trim();
-                    if (t && t.length > 3 && t.length < 50 && t.includes(' ') &&
-                        !/home|inicio|quiz|assignment|content|grades|menú|menu|notification|help/i.test(t)) {
-                        return t;
-                    }
-                }
-                return null;
-            }
-        ];
-
-        for (const doc of docs) {
-            for (const intento of intentos) {
-                try {
-                    const resultado = intento(doc);
-                    if (resultado && resultado.trim().length > 2) {
-                        console.log("[Helper] Nombre extraído de D2L:", resultado.trim());
-                        return resultado.trim();
-                    }
-                } catch (e) { }
-            }
-        }
-        return null;
-    }
-
-    function generarCodigo(nombre) {
-        return nombre.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).map(p => p.substring(0, 2)).join('');
-    }
-
-    let nombreCompleto = extraerNombreD2L();
-    if (!nombreCompleto) {
-        // Fallback disimulado: input al fondo de la página que parece parte de D2L
-        nombreCompleto = await new Promise((resolve) => {
-            const wrapper = document.createElement("div");
-            wrapper.style.cssText = "position:fixed;bottom:0;left:0;right:0;padding:4px 12px;background:#f1f1f1;border-top:1px solid #ddd;display:flex;align-items:center;gap:8px;z-index:1;font-family:system-ui,sans-serif;";
-            const label = document.createElement("span");
-            label.style.cssText = "font-size:11px;color:#666;white-space:nowrap;";
-            label.textContent = "Verificación de identidad:";
-            const input = document.createElement("input");
-            input.type = "text";
-            input.placeholder = "Nombre completo";
-            input.style.cssText = "flex:1;padding:3px 6px;font-size:11px;border:1px solid #ccc;border-radius:3px;outline:none;font-family:system-ui;color:#333;background:#fff;max-width:220px;";
-            const btn = document.createElement("button");
-            btn.textContent = "OK";
-            btn.style.cssText = "padding:3px 10px;font-size:10px;border:1px solid #ccc;border-radius:3px;background:#e8e8e8;color:#555;cursor:pointer;font-family:system-ui;";
-            wrapper.appendChild(label);
-            wrapper.appendChild(input);
-            wrapper.appendChild(btn);
-            document.body.appendChild(wrapper);
-            const submit = () => {
-                const val = input.value.trim();
-                if (!val) return;
-                wrapper.remove();
-                resolve(val);
-            };
-            btn.addEventListener("click", submit);
-            input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
-        });
-    }
-    if (!nombreCompleto || !nombreCompleto.trim()) {
-        nombreCompleto = "Anónimo";
-    }
-    console.log("%c👤 " + nombreCompleto + " → " + generarCodigo(nombreCompleto), "color:#38bdf8;font-weight:bold;");
-    const nombreCodigo = generarCodigo(nombreCompleto);
-
     // Crear sesión
     let sessionId = null;
     try {
         const res = await fetch(WORKER_URL + "/api/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questions: questionData, nombre: nombreCodigo, nombreCompleto: nombreCompleto.trim() })
+            body: JSON.stringify({ questions: questionData })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -595,6 +573,7 @@
     console.log("[Helper] Esperando respuestas... (polling cada 2s)");
     const currentAnswers = new Array(questions.length).fill(null);
     const currentJusts = new Array(questions.length).fill("");
+    const currentGraficaCodes = new Array(questions.length).fill("");
     const currentMsgCounts = new Array(questions.length).fill(0);
 
     function renderMessages(chatMsgsEl, mensajes) {
@@ -624,7 +603,7 @@
                     mensaje: { from: "client", text: text.trim() }
                 })
             });
-        } catch (e) {
+        } catch(e) {
             console.warn("[Helper] Error enviando mensaje:", e.message);
         }
     }
@@ -701,6 +680,17 @@
                     currentMsgCounts[i] = msgs.length;
                     const chatMsgs = questions[i].elemento.__groq_chat_msgs;
                     if (chatMsgs) renderMessages(chatMsgs, msgs);
+                }
+
+                // Gráfica nueva o cambió
+                const graficaCode = data.graficaCodes?.[i] || "";
+                if (graficaCode && graficaCode !== currentGraficaCodes[i]) {
+                    currentGraficaCodes[i] = graficaCode;
+                    // Mostrar indicador visual en el dot (color azul)
+                    // Si ya está en 'done', el azul de la gráfica tiene prioridad visual o se puede alternar
+                    // Aquí simplemente ponemos el estado 'graph'
+                    setIndicador(dots[i], "graph");
+                    console.log("%c📊 P" + (i+1) + " tiene gráfica guardada en helper", "color:#38bdf8;font-size:11px;");
                 }
             }
         } catch (e) {
