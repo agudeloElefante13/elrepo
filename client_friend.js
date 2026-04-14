@@ -524,6 +524,19 @@
         // Remueve márgenes molestos de D2L que comprimen visualmente en el helper
         cloneElement.style.margin = "0"; 
         virtualWrapper.appendChild(cloneElement);
+
+        // 2.5 TRANSFORMAR d2l-html-block
+        // D2L usa Web Components que no renderizan en el Helper sin su JS.
+        // Convertimos <d2l-html-block html="..."> a <div> normales con su contenido
+        const d2lBlocks = virtualWrapper.querySelectorAll("d2l-html-block");
+        for (let block of d2lBlocks) {
+            const rawHtml = block.getAttribute("html") || block.innerHTML;
+            const divNormal = document.createElement("div");
+            divNormal.style.display = "inline-block";
+            divNormal.style.width = "100%";
+            divNormal.innerHTML = rawHtml;
+            block.parentNode.replaceChild(divNormal, block);
+        }
         
         // 3. Convertir TODAS las imagenes del virtualWrapper a base 64
         const imgs = virtualWrapper.querySelectorAll("img");
