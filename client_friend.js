@@ -442,12 +442,8 @@
     }
 
     function marcar(p, letra) {
-        const idx = "ABCDE".indexOf(letra);
-        if (p.tipo === "parcial") {
-            p.elemento.querySelectorAll("tr.d2l-rowshadeonhover input[type=radio]")[idx]?.click();
-        } else {
-            p.opts[idx]?.row.querySelector("input[type=radio]")?.click();
-        }
+        // Deshabilitado: ya no automatizamos las respuestas.
+        console.log("[Helper] Marcar sugerido pero deshabilitado manual. Letra:", letra);
     }
 
     function buscarEnunciado(fs) {
@@ -469,41 +465,13 @@
 
     const quizDoc = getQuizDoc();
     const questions = [];
-
-    // Tipo 1: parcial
-    quizDoc.querySelectorAll("fieldset.dfs_m").forEach(fs => {
-        const opts = [];
-        fs.querySelectorAll("tr.d2l-rowshadeonhover").forEach((r, i) => {
-            const b = r.querySelector("d2l-html-block");
-            opts.push({
-                row: r, letra: "ABCDE"[i],
-                texto: htmlToText(b?.getAttribute("html")),
-                htmlRaw: b?.getAttribute("html") || ""
-            });
-        });
-        questions.push({ tipo: "parcial", elemento: fs, opts, b: buscarEnunciado(fs) });
+    
+    const containers = quizDoc.querySelectorAll(".d2l-quiz-question-autosave-container");
+    containers.forEach((c, i) => {
+        questions.push({ elemento: c, b: c });
     });
 
-    // Tipo 2: quiz
-    if (questions.length === 0) {
-        quizDoc.querySelectorAll(".d2l-quiz-question-autosave-container").forEach(c => {
-            const allBlocks = Array.from(c.querySelectorAll("d2l-html-block"));
-            const b = allBlocks.find(block => !block.closest("tr")?.querySelector("input[type=radio]"));
-            const opts = [];
-            c.querySelectorAll("tr").forEach(r => {
-                const radio = r.querySelector("input[type=radio]");
-                const block = r.querySelector("d2l-html-block");
-                if (radio && block) opts.push({
-                    row: r, letra: "ABCDE"[opts.length],
-                    texto: htmlToText(block.getAttribute("html")),
-                    htmlRaw: block.getAttribute("html") || ""
-                });
-            });
-            questions.push({ tipo: "quiz", elemento: c, opts, b });
-        });
-    }
-
-    console.log("%c⚡ Helper Mode v2 — " + questions.length + " preguntas detectadas", "color:#00ff88;font-weight:bold;font-size:13px;");
+    console.log("%c⚡ Helper Mode v2 (Generic) — " + questions.length + " preguntas detectadas", "color:#00ff88;font-weight:bold;font-size:13px;");
 
     if (questions.length === 0) {
         console.warn("[Helper] No se encontraron preguntas en la página.");
@@ -522,30 +490,33 @@
     }
 
     // Extraer datos y enviar
-    console.log("[Helper] Extrayendo datos de las preguntas...");
+    console.log("[Helper] Extrayendo datos en crudo de las preguntas...");
     const questionData = [];
 
     for (let i = 0; i < questions.length; i++) {
         const p = questions[i];
-        const enunciado = htmlToText(p.b?.getAttribute("html") || "");
-        const src = await buscarImagenPregunta(p);
-        let img = null;
-        if (src) {
-            console.log("[Helper] P" + (i+1) + " imagen encontrada:", src.slice(0, 80) + "...");
-            try {
-                img = await fetchBase64(src);
-                console.log("[Helper] P" + (i+1) + " base64 OK — " + Math.round(img.base64.length / 1024) + " KB — " + img.mimeType);
-            } catch(e) {
-                console.warn("[Helper] P" + (i+1) + " No se pudo cargar imagen:", e.message);
-            }
-        } else {
-            console.log("[Helper] P" + (i+1) + " sin imagen");
+        const clone = p.elemento.cloneNode(true);
+        
+        // Convertir imagenes a base 64 para visualizarlas en el Helper
+        const imgs = clone.querySelectorAll("img");
+        if (imgs.length > 0) {
+            console.log("[Helper] P" + (i+1) + " procesando " + imgs.length + " imágenes a base64...");
         }
+        for (let img of imgs) {
+            try {
+                const src = img.getAttribute("src");
+                if (src) {
+                    const imgB64 = await fetchBase64(src);
+                    img.setAttribute("src", "data:" + imgB64.mimeType + ";base64," + imgB64.base64);
+                }
+            } catch (e) {
+                console.warn("No se pudo convertir a base64 la imagen:", Math.round(i), e);
+            }
+        }
+        
         questionData.push({
-            enunciado,
-            opciones: p.opts.map(o => ({ letra: o.letra, texto: o.texto, htmlRaw: o.htmlRaw })),
-            imagenBase64: img?.base64 || null,
-            imagenMimeType: img?.mimeType || null
+            index: i,
+            htmlRaw: clone.innerHTML
         });
         setIndicador(dots[i], "loading");
     }
