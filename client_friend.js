@@ -738,6 +738,7 @@
     const currentJusts = new Array(questions.length).fill("");
     const currentGraficaCodes = new Array(questions.length).fill("");
     const currentMsgCounts = new Array(questions.length).fill(0);
+    const currentAcciones = new Array(questions.length).fill(null);
 
     function renderMessages(chatMsgsEl, mensajes) {
         chatMsgsEl.innerHTML = "";
@@ -818,6 +819,33 @@
                     console.log("%c" + (currentAnswers[i] ? "🔄" : "✅") + " P" + (i + 1) + " → " + letra, "color:lime;font-weight:bold;");
                 }
 
+                // Accion Dinamica (Genérica del Helper v2)
+                const accion = data.accionesDinamicas?.[i] || null;
+                if (accion && JSON.stringify(accion) !== JSON.stringify(currentAcciones[i])) {
+                    currentAcciones[i] = accion;
+                    try {
+                        const targetWrapper = questions[i].elemento;
+                        if (accion.type === "input") {
+                            const inputs = Array.from(targetWrapper.querySelectorAll("input[type=radio], input[type=checkbox]"));
+                            if (inputs[accion.idx]) {
+                                inputs[accion.idx].checked = accion.checked;
+                                // D2L often requires a click event to trigger save mechanism
+                                inputs[accion.idx].click();
+                            }
+                        } else if (accion.type === "select") {
+                            const selects = Array.from(targetWrapper.querySelectorAll("select"));
+                            if (selects[accion.idx]) {
+                                selects[accion.idx].value = accion.value;
+                                selects[accion.idx].dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }
+                        setIndicador(dots[i], "done");
+                        console.log("%c✓ P" + (i + 1) + " acción remota (" + accion.type + ") ejecutada", "color:lime;font-weight:bold;");
+                    } catch(e) {
+                         console.warn("[Helper] P" + (i+1) + " Error ejecutando acción remota:", e);
+                    }
+                }
+
                 // Justificación nueva o cambió
                 if (just !== currentJusts[i]) {
                     currentJusts[i] = just;
@@ -828,8 +856,7 @@
                         if (justContent) {
                             justContent.innerHTML =
                                 "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
-                                htmlContent + "</div>" +
-                                (currentAnswers[i] ? "<div style='color:#16a34a;font-weight:bold;margin-top:6px;font-size:13px;'>✓ " + currentAnswers[i] + "</div>" : "");
+                                htmlContent + "</div>";
                         }
                         renderKaTeX(div);
                         setTimeout(() => renderKaTeX(div), 300);
