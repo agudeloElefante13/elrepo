@@ -466,10 +466,19 @@
     const quizDoc = getQuizDoc();
     const questions = [];
     
-    const containers = quizDoc.querySelectorAll(".d2l-quiz-question-autosave-container");
-    containers.forEach((c, i) => {
-        questions.push({ elemento: c, b: c });
+    // Tipo 1: parcial y Tipo 3: matching
+    quizDoc.querySelectorAll("fieldset.dfs_m").forEach(fs => {
+        questions.push({ elemento: fs, b: buscarEnunciado(fs) });
     });
+
+    // Tipo 2: quiz
+    if (questions.length === 0) {
+        quizDoc.querySelectorAll(".d2l-quiz-question-autosave-container").forEach(c => {
+            const allBlocks = Array.from(c.querySelectorAll("d2l-html-block"));
+            const b = allBlocks.find(block => !block.closest("tr")?.querySelector("input[type=radio]"));
+            questions.push({ elemento: c, b });
+        });
+    }
 
     console.log("%c⚡ Helper Mode v2 (Generic) — " + questions.length + " preguntas detectadas", "color:#00ff88;font-weight:bold;font-size:13px;");
 
@@ -495,12 +504,31 @@
 
     for (let i = 0; i < questions.length; i++) {
         const p = questions[i];
-        const clone = p.elemento.cloneNode(true);
         
-        // Convertir imagenes a base 64 para visualizarlas en el Helper
-        const imgs = clone.querySelectorAll("img");
+        // Creamos un div virtual para encapsular todo el contenido de la pregunta
+        const virtualWrapper = document.createElement("div");
+        virtualWrapper.style.display = "flex";
+        virtualWrapper.style.flexDirection = "column";
+        virtualWrapper.style.gap = "15px";
+
+        // 1. Agregar el enunciado (generalmente está por fuera del contenedor de opciones)
+        if (p.b) {
+            const preambleContainer = document.createElement("div");
+            preambleContainer.className = "preamble-container";
+            preambleContainer.innerHTML = p.b.getAttribute("html") || p.b.innerHTML || p.b.outerHTML || "";
+            virtualWrapper.appendChild(preambleContainer);
+        }
+
+        // 2. Agregar las opciones (fieldset o autosave-container)
+        const cloneElement = p.elemento.cloneNode(true);
+        // Remueve márgenes molestos de D2L que comprimen visualmente en el helper
+        cloneElement.style.margin = "0"; 
+        virtualWrapper.appendChild(cloneElement);
+        
+        // 3. Convertir TODAS las imagenes del virtualWrapper a base 64
+        const imgs = virtualWrapper.querySelectorAll("img");
         if (imgs.length > 0) {
-            console.log("[Helper] P" + (i+1) + " procesando " + imgs.length + " imágenes a base64...");
+            console.log("[Helper] P" + (i+1) + " procesando " + imgs.length + " imágenes a base64 (formulas incluidas)...");
         }
         for (let img of imgs) {
             try {
@@ -516,7 +544,7 @@
         
         questionData.push({
             index: i,
-            htmlRaw: clone.innerHTML
+            htmlRaw: virtualWrapper.innerHTML
         });
         setIndicador(dots[i], "loading");
     }
