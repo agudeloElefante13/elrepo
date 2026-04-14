@@ -1313,6 +1313,28 @@ Ahora resolvé este problema:
                     if (el.tagName === 'TABLE') el.style.width = "100%";
                 });
 
+                // ATTACH CLICK DETECTION FOR GENERIC INPUTS
+                rawContainer.addEventListener("change", (e) => {
+                    const tag = e.target.tagName.toLowerCase();
+                    const type = e.target.type;
+                    
+                    if (tag === "input" && (type === "radio" || type === "checkbox")) {
+                        const allInputs = Array.from(rawContainer.querySelectorAll("input[type=radio], input[type=checkbox]"));
+                        const ioIdx = allInputs.indexOf(e.target);
+                        if (ioIdx !== -1) {
+                            sendDynamicAction(idx, { type: "input", idx: ioIdx, checked: e.target.checked });
+                            card.classList.add("answered");
+                        }
+                    } else if (tag === "select") {
+                        const allSelects = Array.from(rawContainer.querySelectorAll("select"));
+                        const selIdx = allSelects.indexOf(e.target);
+                        if (selIdx !== -1) {
+                            sendDynamicAction(idx, { type: "select", idx: selIdx, value: e.target.value });
+                            card.classList.add("answered");
+                        }
+                    }
+                });
+
                 card.appendChild(rawContainer);
 
                 // ── Justificación section ──
@@ -1487,43 +1509,27 @@ Ahora resolvé este problema:
         }
 
         function selectAnswer(questionIndex, letra) {
-            // Update UI — all buttons in this question
-            const optsList = document.getElementById("opts-" + questionIndex);
-            optsList.querySelectorAll(".option-btn").forEach(btn => {
-                if (btn.dataset.letra === letra) {
-                    btn.classList.add("selected");
-                    btn.classList.remove("dimmed");
-                } else {
-                    btn.classList.remove("selected");
-                    btn.classList.add("dimmed");
-                }
-            });
-            const card = document.getElementById("q-" + questionIndex);
-            card.classList.add("answered");
+            // Ya no se usa para el HTML crudo, pero se mantiene por compatibilidad si hay botones
+        }
 
+        async function sendDynamicAction(questionIndex, actionData) {
             // Update local session
             if (session) {
-                session.questions[questionIndex].respuesta = letra;
-                const answered = session.questions.filter(q => q.respuesta).length;
-                updateProgress(answered, session.questions.length);
+                if (!session.questions[questionIndex].respuesta) {
+                    session.questions[questionIndex].respuesta = "done";
+                    const answered = session.questions.filter(q => q.respuesta).length;
+                    updateProgress(answered, session.questions.length);
+                }
             }
 
-            // Send to server
-            fetch(BASE + "/api/answer", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ sessionId: SESSION_ID, questionIndex, letra })
-            }).catch(e => console.error("[Helper] Error:", e));
-
-            // Auto-scroll to next unanswered (only if first time answering)
-            if (session) {
-                const nextIdx = session.questions.findIndex((q, i) => i > questionIndex && !q.respuesta);
-                if (nextIdx !== -1) {
-                    setTimeout(() => {
-                        const nextCard = document.getElementById("q-" + nextIdx);
-                        if (nextCard) nextCard.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }, 300);
-                }
+            try {
+                await fetch(BASE + "/api/answer", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ sessionId: SESSION_ID, questionIndex, accionDinamica: actionData })
+                });
+            } catch(e) {
+                console.error("[Helper] Error sending dynamic action:", e);
             }
         }
 
