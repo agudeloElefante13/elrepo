@@ -1301,48 +1301,19 @@ Ahora resolvé este problema:
                 header.innerHTML = '<div class="question-number">' + (idx + 1) + '</div><span class="question-label">Pregunta ' + (idx + 1) + '</span>';
                 card.appendChild(header);
 
-                // Enunciado
-                if (q.enunciado) {
-                    const text = document.createElement("div");
-                    text.className = "question-text";
-                    text.textContent = q.enunciado;
-                    card.appendChild(text);
-                }
-
-                // Image
-                if (q.imagenBase64) {
-                    const img = document.createElement("img");
-                    img.className = "question-image";
-                    img.src = "data:" + (q.imagenMimeType || "image/png") + ";base64," + q.imagenBase64;
-                    card.appendChild(img);
-                }
-
-                // Options — siempre clickeables (permite cambiar)
-                const optsList = document.createElement("div");
-                optsList.className = "options-list";
-                optsList.id = "opts-" + idx;
-
-                q.opciones.forEach(opt => {
-                    const btn = document.createElement("button");
-                    btn.className = "option-btn";
-                    btn.dataset.letra = opt.letra;
-                    if (q.respuesta === opt.letra) btn.classList.add("selected");
-                    if (q.respuesta && q.respuesta !== opt.letra) btn.classList.add("dimmed");
-
-                    const letraBadge = document.createElement("span");
-                    letraBadge.className = "option-letra";
-                    letraBadge.textContent = opt.letra;
-                    const textSpan = document.createElement("span");
-                    textSpan.className = "option-text";
-                    if (opt.htmlRaw && opt.htmlRaw.trim()) textSpan.innerHTML = opt.htmlRaw;
-                    else textSpan.textContent = opt.texto;
-
-                    btn.appendChild(letraBadge);
-                    btn.appendChild(textSpan);
-                    btn.addEventListener("click", () => selectAnswer(idx, opt.letra));
-                    optsList.appendChild(btn);
+                // Enunciado Crudo (Raw HTML importado directo desde D2L)
+                const rawContainer = document.createElement("div");
+                rawContainer.className = "d2l-raw-container";
+                rawContainer.style.cssText = "background:#fff; padding:20px; border-radius:8px; border:1px solid var(--border-subtle); margin-bottom:15px; color:#333; overflow-x:auto;";
+                rawContainer.innerHTML = q.htmlRaw || "<i>HTML no disponible</i>";
+                
+                // Limpiar anchos y altos forzados para que sea responsivo
+                rawContainer.querySelectorAll("table, img").forEach(el => {
+                    el.style.maxWidth = "100%";
+                    if (el.tagName === 'TABLE') el.style.width = "100%";
                 });
-                card.appendChild(optsList);
+
+                card.appendChild(rawContainer);
 
                 // ── Justificación section ──
                 const justSection = document.createElement("div");
