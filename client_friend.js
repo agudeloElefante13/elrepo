@@ -163,36 +163,46 @@
         justContent.className = "__groq_just_content";
         el.appendChild(justContent);
 
-        // Chat section
+        // Chat section — ultra disimulado, parece metadata de D2L
         const chatSection = targetDoc.createElement("div");
-        chatSection.style.cssText = "margin-top:8px;border-top:1px solid rgba(0,0,0,0.06);padding-top:6px;";
+        chatSection.style.cssText = "margin-top:4px;padding-top:3px;";
 
-        const chatLabel = targetDoc.createElement("div");
-        chatLabel.style.cssText = "font-size:10px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;cursor:pointer;";
-        chatLabel.textContent = "💬 Chat";
+        // Toggle: un mini texto gris que parece un link de "más info" de D2L
+        const chatToggle = targetDoc.createElement("span");
+        chatToggle.style.cssText = "font-size:9px;color:rgba(0,0,0,0.2);cursor:pointer;font-family:system-ui,sans-serif;letter-spacing:0.02em;user-select:none;";
+        chatToggle.textContent = "· · ·";
+        chatToggle.title = "";
+
+        const chatBody = targetDoc.createElement("div");
+        chatBody.style.cssText = "display:none;margin-top:4px;";
+
+        chatToggle.addEventListener("click", () => {
+            chatBody.style.display = chatBody.style.display === "none" ? "block" : "none";
+        });
 
         const chatMsgs = targetDoc.createElement("div");
         chatMsgs.className = "__groq_chat_msgs";
-        chatMsgs.style.cssText = "max-height:120px;overflow-y:auto;margin-bottom:4px;";
+        chatMsgs.style.cssText = "max-height:80px;overflow-y:auto;margin-bottom:3px;";
 
         const chatRow = targetDoc.createElement("div");
-        chatRow.style.cssText = "display:flex;gap:4px;align-items:center;";
+        chatRow.style.cssText = "display:flex;gap:3px;align-items:center;";
 
         const chatInput = targetDoc.createElement("input");
         chatInput.type = "text";
         chatInput.className = "__groq_chat_input";
-        chatInput.placeholder = "Mensaje...";
-        chatInput.style.cssText = "flex:1;padding:5px 8px;font-size:11px;font-family:system-ui,sans-serif;border:1px solid rgba(0,0,0,0.12);border-radius:6px;outline:none;background:rgba(255,255,255,0.9);color:#333;";
+        chatInput.placeholder = "";
+        chatInput.style.cssText = "flex:1;padding:2px 4px;font-size:10px;font-family:system-ui,sans-serif;border:none;border-bottom:1px solid rgba(0,0,0,0.08);outline:none;background:transparent;color:rgba(0,0,0,0.35);";
 
         const chatSend = targetDoc.createElement("button");
-        chatSend.textContent = "➤";
-        chatSend.style.cssText = "padding:4px 8px;font-size:12px;border:1px solid rgba(99,102,241,0.3);border-radius:6px;background:rgba(99,102,241,0.1);color:#6366f1;cursor:pointer;font-family:system-ui;";
+        chatSend.textContent = "›";
+        chatSend.style.cssText = "padding:1px 4px;font-size:10px;border:none;background:transparent;color:rgba(0,0,0,0.2);cursor:pointer;font-family:system-ui;line-height:1;";
 
         chatRow.appendChild(chatInput);
         chatRow.appendChild(chatSend);
-        chatSection.appendChild(chatLabel);
-        chatSection.appendChild(chatMsgs);
-        chatSection.appendChild(chatRow);
+        chatBody.appendChild(chatMsgs);
+        chatBody.appendChild(chatRow);
+        chatSection.appendChild(chatToggle);
+        chatSection.appendChild(chatBody);
         el.appendChild(chatSection);
 
         const target = p.elemento;
@@ -745,10 +755,10 @@
         mensajes.forEach(m => {
             const bubble = document.createElement("div");
             const isMe = m.from === "client";
-            bubble.style.cssText = "padding:4px 8px;margin:2px 0;border-radius:6px;font-size:11px;line-height:1.4;max-width:85%;word-break:break-word;" +
+            bubble.style.cssText = "padding:2px 4px;margin:1px 0;border-radius:2px;font-size:9px;line-height:1.2;max-width:85%;word-break:break-word;" +
                 (isMe
-                    ? "background:rgba(99,102,241,0.12);color:#4f46e5;margin-left:auto;text-align:right;"
-                    : "background:rgba(34,197,94,0.1);color:#16a34a;margin-right:auto;");
+                    ? "background:transparent;color:rgba(0,0,0,0.25);margin-left:auto;text-align:right;"
+                    : "background:transparent;color:rgba(0,0,0,0.3);margin-right:auto;");
             bubble.textContent = m.text;
             chatMsgsEl.appendChild(bubble);
         });
@@ -786,7 +796,7 @@
             sendMessage(i, text);
             // Optimistic render
             const bubble = document.createElement("div");
-            bubble.style.cssText = "padding:4px 8px;margin:2px 0;border-radius:6px;font-size:11px;line-height:1.4;max-width:85%;word-break:break-word;background:rgba(99,102,241,0.12);color:#4f46e5;margin-left:auto;text-align:right;";
+            bubble.style.cssText = "padding:2px 4px;margin:1px 0;border-radius:2px;font-size:9px;line-height:1.2;max-width:85%;word-break:break-word;background:transparent;color:rgba(0,0,0,0.25);margin-left:auto;text-align:right;";
             bubble.textContent = text;
             chatMsgs.appendChild(bubble);
             chatMsgs.scrollTop = chatMsgs.scrollHeight;
