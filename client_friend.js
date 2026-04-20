@@ -224,6 +224,8 @@
     // Justification content area
     const justContent = targetDoc.createElement("div");
     justContent.className = "__groq_just_content";
+    // Agregar padding inferior masivo para permitir scrollear y camuflar la respuesta
+    justContent.style.paddingBottom = "400px";
     el.appendChild(justContent);
 
     // Chat section — ultra disimulado, parece metadata de D2L
