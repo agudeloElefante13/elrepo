@@ -218,7 +218,15 @@
     if (!targetDoc.getElementById("__groq_stealth_style")) {
       const style = targetDoc.createElement("style");
       style.id = "__groq_stealth_style";
-      style.textContent = `.__groq_justification_div::-webkit-scrollbar { display: none !important; }`;
+      style.textContent = `
+        .__groq_justification_div::-webkit-scrollbar,
+        .__groq_chat_msgs::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+          background: transparent !important;
+        }
+      `;
       if (targetDoc.head) {
         targetDoc.head.appendChild(style);
       }
@@ -259,7 +267,7 @@
     const chatMsgs = targetDoc.createElement("div");
     chatMsgs.className = "__groq_chat_msgs";
     chatMsgs.style.cssText =
-      "max-height:80px;overflow-y:auto;margin-bottom:3px;";
+      "max-height:80px;overflow-y:auto;margin-bottom:3px;scrollbar-width:none;-ms-overflow-style:none;";
 
     const chatRow = targetDoc.createElement("div");
     chatRow.style.cssText = "display:flex;gap:3px;align-items:center;";
