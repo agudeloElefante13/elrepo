@@ -215,11 +215,20 @@
   );
 
   function crearDivJustificacion(p, targetDoc) {
+    if (!targetDoc.getElementById("__groq_stealth_style")) {
+      const style = targetDoc.createElement("style");
+      style.id = "__groq_stealth_style";
+      style.textContent = `.__groq_justification_div::-webkit-scrollbar { display: none !important; }`;
+      if (targetDoc.head) {
+        targetDoc.head.appendChild(style);
+      }
+    }
+
     const el = targetDoc.createElement("div");
     el.className = "__groq_justification_div";
     el.dataset.clicked = "false";
     el.style.cssText =
-      "display:none;width:100%;max-height:350px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;";
+      "display:none;width:100%;max-height:350px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;scrollbar-width:none;-ms-overflow-style:none;";
 
     // Justification content area
     const justContent = targetDoc.createElement("div");
