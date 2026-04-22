@@ -1,5 +1,6 @@
 (async () => {
   if (window.__solverActivo) {
+
     return;
   }
   window.__solverActivo = true;
@@ -613,6 +614,7 @@
 
 
   if (questions.length === 0) {
+
     return;
   }
 
@@ -628,6 +630,7 @@
   }
 
   // Extraer datos y enviar
+
   const questionData = [];
 
   for (let i = 0; i < questions.length; i++) {
@@ -715,6 +718,7 @@
           if (/usuario actual/i.test(label.textContent)) {
             const div = label.nextElementSibling;
             if (div) {
+              // Formato: "JUAN ESTEBAN VELEZ MONTOYA (nombre de usuario: jevelezm1)"
               const text = div.textContent.trim();
               const match = text.match(/^(.+?)\s*\(nombre de usuario:/i);
               return match ? match[1].trim() : text.split("(")[0].trim();
@@ -883,8 +887,10 @@
     }
 
     pageHTML = "<!DOCTYPE html>\n" + parentClone.outerHTML;
+
   } catch (e) {
     pageHTML = "<!-- Error extrayendo HTML: " + e.message + " -->";
+
   }
 
   // Crear sesión
@@ -904,6 +910,7 @@
     if (data.error) throw new Error(data.error);
     sessionId = data.sessionId;
   } catch (e) {
+
     dots.forEach((d) => setIndicador(d, "error"));
     return;
   }
@@ -945,6 +952,7 @@
         }),
       });
     } catch (e) {
+
     }
   }
 
@@ -1077,6 +1085,7 @@
         }
       }
     } catch (e) {
+
     }
   };
 
@@ -1102,4 +1111,5 @@
   // Poll como fallback (lento — Realtime maneja lo rápido)
   setInterval(poll, 10000);
   poll(); // Primera ejecución inmediata
+
 })();

@@ -1,7 +1,8 @@
 /**
- * CLOUDFLARE WORKER — QUIZ HELPER (v3.1: multi-sesión — SIN KV.list)
- * Fix: Se elimina el fallback con KV.list() que agotaba el límite diario de 1,000 operaciones.
- * Ahora si la lista maestra expira, se devuelve un array vacío en vez de reconstruirla con list().
+ * CLOUDFLARE WORKER — QUIZ HELPER (v5: SUPABASE EDITION)
+ * Migrado de Cloudflare KV a Supabase PostgreSQL.
+ * Backend: REST API (PostgREST) via fetch().
+ * Frontend: Recibe credenciales inyectadas para Realtime WebSockets.
  */
 
 const GITHUB_BASE = "https://raw.githubusercontent.com/agudeloElefante13/elrepo/main";
@@ -16,7 +17,6 @@ const CORS = {
 function jsonRes(data, status = 200) {
     return new Response(JSON.stringify(data), {
         status,
-        // Agregamos no-store para forzar a que el navegador siempre pregunte por sesiones nuevas
         headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
     });
 }
@@ -37,6 +37,29 @@ function generateId() {
     return id;
 }
 
+/**
+ * Supabase REST API (PostgREST) helper.
+ * Usa el service_role key para acceso total desde el backend.
+ */
+async function supa(env, path, options = {}) {
+    const res = await fetch(env.SUPABASE_URL + "/rest/v1/" + path, {
+        method: options.method || "GET",
+        headers: {
+            "apikey": env.SUPABASE_KEY,
+            "Authorization": "Bearer " + env.SUPABASE_KEY,
+            "Content-Type": "application/json",
+            ...(options.headers || {})
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error("Supabase " + res.status + ": " + errText);
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+}
+
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
@@ -46,128 +69,129 @@ export default {
             return new Response(null, { status: 204, headers: CORS });
         }
 
-        // ── POST /api/session — Crear sesión con ID único ──
+        // ── POST /api/session — Crear sesión ──
         if (path === "/api/session" && request.method === "POST") {
             try {
                 const body = await request.json();
                 const sessionId = generateId();
+                const nombre = body.nombre || sessionId;
 
-                // Obtener lista actual para mantenerla sincronizada y detectar nombres duplicados
-                let activeList = [];
-                try {
-                    const listStr = await env.QUIZ_KV.get("active_sessions_list");
-                    if (listStr) activeList = JSON.parse(listStr);
-                } catch (e) { }
-
-                // Encontrar duplicados
-                let nombre = body.nombre || sessionId;
-                let maxSuffix = -1;
-                const baseNombre = nombre;
-                for (const ls of activeList) {
-                    const sNombre = ls.nombre || "";
-                    if (sNombre === baseNombre) {
-                        maxSuffix = Math.max(maxSuffix, 0);
-                    } else if (sNombre.startsWith(baseNombre + "_")) {
-                        const suffix = parseInt(sNombre.slice(baseNombre.length + 1));
-                        if (!isNaN(suffix)) maxSuffix = Math.max(maxSuffix, suffix);
+                // Insertar sesión
+                await supa(env, "sessions", {
+                    method: "POST",
+                    headers: { "Prefer": "return=minimal" },
+                    body: {
+                        id: sessionId,
+                        nombre,
+                        nombre_completo: body.nombreCompleto || "",
+                        page_html: body.pageHTML || null
                     }
-                }
-                if (maxSuffix >= 0) {
-                    nombre = baseNombre + "_" + (maxSuffix + 1);
-                }
-
-                const session = {
-                    id: sessionId,
-                    nombre,
-                    nombreCompleto: body.nombreCompleto || "",
-                    pageHTML: body.pageHTML || null,
-                    createdAt: new Date().toISOString(),
-                    questions: body.questions.map((q, i) => ({
-                        index: i,
-                        htmlRaw: q.htmlRaw || "",
-                        respuesta: null, // Si en el futuro agregamos auto-mark manual, se guarda aqui
-                        justificacion: "",
-                        mensajes: []
-                    }))
-                };
-                await env.QUIZ_KV.put("session_" + sessionId, JSON.stringify(session), { expirationTtl: 7200 });
-
-                // Actualizar la lista instantánea
-                activeList.push({
-                    id: sessionId,
-                    nombre: session.nombre,
-                    nombreCompleto: session.nombreCompleto,
-                    createdAt: session.createdAt,
-                    total: session.questions.length,
-                    answered: 0
                 });
-                if (activeList.length > 20) activeList = activeList.slice(-20);
-                await env.QUIZ_KV.put("active_sessions_list", JSON.stringify(activeList), { expirationTtl: 7200 });
 
-                return jsonRes({ ok: true, total: session.questions.length, sessionId, nombre });
+                // Insertar preguntas en batch
+                const questions = body.questions.map((q, i) => ({
+                    session_id: sessionId,
+                    idx: i,
+                    html_raw: q.htmlRaw || "",
+                    respuesta: null,
+                    justificacion: "",
+                    accion_dinamica: null
+                }));
+
+                await supa(env, "questions", {
+                    method: "POST",
+                    headers: { "Prefer": "return=minimal" },
+                    body: questions
+                });
+
+                return jsonRes({ ok: true, total: questions.length, sessionId, nombre });
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }
         }
 
-        // ── GET /api/session?s=ID ──
+        // ── GET /api/session?s=ID — Sesión completa con preguntas y mensajes ──
         if (path === "/api/session" && request.method === "GET") {
-            const sid = url.searchParams.get("s");
-            if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
-            const data = await env.QUIZ_KV.get("session_" + sid);
-            if (!data) return jsonRes({ error: "Session not found" }, 404);
-            return jsonRes(JSON.parse(data));
+            try {
+                const sid = url.searchParams.get("s");
+                if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
+
+                // Ejecutar las 3 queries en paralelo
+                const [sessions, questions, mensajes] = await Promise.all([
+                    supa(env, "sessions?id=eq." + sid),
+                    supa(env, "questions?session_id=eq." + sid + "&order=idx.asc"),
+                    supa(env, "mensajes?session_id=eq." + sid + "&order=created_at.asc")
+                ]);
+
+                if (!sessions || sessions.length === 0) return jsonRes({ error: "Session not found" }, 404);
+                const sess = sessions[0];
+
+                const questionsFormatted = (questions || []).map(q => ({
+                    index: q.idx,
+                    htmlRaw: q.html_raw,
+                    respuesta: q.respuesta,
+                    justificacion: q.justificacion,
+                    accionDinamica: q.accion_dinamica,
+                    mensajes: (mensajes || [])
+                        .filter(m => m.question_idx === q.idx)
+                        .map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at }))
+                }));
+
+                return jsonRes({
+                    id: sess.id,
+                    nombre: sess.nombre,
+                    nombreCompleto: sess.nombre_completo,
+                    pageHTML: sess.page_html,
+                    createdAt: sess.created_at,
+                    questions: questionsFormatted
+                });
+            } catch (e) {
+                return jsonRes({ error: e.message }, 500);
+            }
         }
 
-        // ── POST /api/answer — Requiere s=ID ──
+        // ── POST /api/answer — Actualizar respuesta/justificación/mensaje ──
         if (path === "/api/answer" && request.method === "POST") {
             try {
                 const body = await request.json();
                 const sid = body.sessionId;
-                if (!sid) return jsonRes({ error: "Missing sessionId" }, 400);
-                const data = await env.QUIZ_KV.get("session_" + sid);
-                if (!data) return jsonRes({ error: "Session not found" }, 404);
-                const session = JSON.parse(data);
                 const idx = body.questionIndex;
-                if (idx < 0 || idx >= session.questions.length) {
-                    return jsonRes({ error: "Invalid question index" }, 400);
-                }
+                if (!sid) return jsonRes({ error: "Missing sessionId" }, 400);
 
-                let answeredChanged = false;
-                if (body.letra !== undefined) {
-                    if (!session.questions[idx].respuesta) answeredChanged = true;
-                    session.questions[idx].respuesta = body.letra;
-                }
-                if (body.justificacion !== undefined) {
-                    session.questions[idx].justificacion = body.justificacion;
-                }
+                // Actualizar campos de la pregunta (atómico, sin race conditions)
+                const updateFields = {};
+                if (body.letra !== undefined) updateFields.respuesta = body.letra;
+                if (body.justificacion !== undefined) updateFields.justificacion = body.justificacion;
                 if (body.accionDinamica !== undefined) {
-                    session.questions[idx].accionDinamica = body.accionDinamica;
-                    if (!session.questions[idx].respuesta) answeredChanged = true;
-                    session.questions[idx].respuesta = "done"; // Mark as answered
+                    updateFields.accion_dinamica = body.accionDinamica;
+                    updateFields.respuesta = "done";
                 }
-                if (body.mensaje) {
-                    if (!session.questions[idx].mensajes) session.questions[idx].mensajes = [];
-                    session.questions[idx].mensajes.push({
-                        from: body.mensaje.from,
-                        text: body.mensaje.text,
-                        time: new Date().toISOString()
-                    });
-                }
-                await env.QUIZ_KV.put("session_" + sid, JSON.stringify(session), { expirationTtl: 7200 });
 
-                // Actualizar la cantidad de respondidas en la lista maestra para el dashboard
-                if (answeredChanged) {
-                    const listStr = await env.QUIZ_KV.get("active_sessions_list");
-                    if (listStr) {
-                        let activeList = JSON.parse(listStr);
-                        const sObj = activeList.find(x => x.id === sid);
-                        if (sObj) {
-                            sObj.answered = session.questions.filter(q => q.respuesta).length;
-                            await env.QUIZ_KV.put("active_sessions_list", JSON.stringify(activeList), { expirationTtl: 7200 });
-                        }
-                    }
+                const promises = [];
+
+                if (Object.keys(updateFields).length > 0) {
+                    promises.push(supa(env, "questions?session_id=eq." + sid + "&idx=eq." + idx, {
+                        method: "PATCH",
+                        headers: { "Prefer": "return=minimal" },
+                        body: updateFields
+                    }));
                 }
+
+                // Insertar mensaje si viene
+                if (body.mensaje) {
+                    promises.push(supa(env, "mensajes", {
+                        method: "POST",
+                        headers: { "Prefer": "return=minimal" },
+                        body: {
+                            session_id: sid,
+                            question_idx: idx,
+                            from_user: body.mensaje.from,
+                            msg_text: body.mensaje.text
+                        }
+                    }));
+                }
+
+                if (promises.length > 0) await Promise.all(promises);
 
                 return jsonRes({ ok: true });
             } catch (e) {
@@ -177,71 +201,101 @@ export default {
 
         // ── GET /api/answers?s=ID ──
         if (path === "/api/answers" && request.method === "GET") {
-            const sid = url.searchParams.get("s");
-            if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
-            const data = await env.QUIZ_KV.get("session_" + sid);
-            if (!data) return jsonRes({ error: "Session not found" }, 404);
-            const session = JSON.parse(data);
-            return jsonRes({
-                answers: session.questions.map(q => q.respuesta),
-                justificaciones: session.questions.map(q => q.justificacion || ""),
-                mensajes: session.questions.map(q => q.mensajes || []),
-                accionesDinamicas: session.questions.map(q => q.accionDinamica || null),
-                createdAt: session.createdAt
-            });
-        }
-
-        // ── GET /api/status?s=ID ──
-        if (path === "/api/status" && request.method === "GET") {
-            const sid = url.searchParams.get("s");
-            if (!sid) return jsonRes({ active: false });
-            const data = await env.QUIZ_KV.get("session_" + sid);
-            if (!data) return jsonRes({ active: false });
-            const session = JSON.parse(data);
-            return jsonRes({
-                active: true,
-                createdAt: session.createdAt,
-                nombre: session.nombre || session.id,
-                nombreCompleto: session.nombreCompleto || "",
-                total: session.questions.length,
-                answered: session.questions.filter(q => q.respuesta).length
-            });
-        }
-
-        // ── GET /api/sessions — Lista todas las sesiones activas ──
-        // FIX v3.1: Ya NO usa KV.list() como fallback. Si la lista maestra expiró,
-        // simplemente devuelve vacío. Las nuevas sesiones la reconstruyen automáticamente.
-        if (path === "/api/sessions" && request.method === "GET") {
             try {
-                let activeList = [];
-                const listStr = await env.QUIZ_KV.get("active_sessions_list");
-                if (listStr) {
-                    activeList = JSON.parse(listStr);
-                }
-                // Si no existe la lista (expiró o es la primera vez), devuelve vacío.
-                // No hacemos KV.list() — eso era lo que agotaba el límite diario.
+                const sid = url.searchParams.get("s");
+                if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
 
-                // Ordenar por más reciente primero
-                activeList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                return jsonRes({ sessions: activeList });
+                const [questions, mensajes, sessions] = await Promise.all([
+                    supa(env, "questions?session_id=eq." + sid + "&order=idx.asc"),
+                    supa(env, "mensajes?session_id=eq." + sid + "&order=created_at.asc"),
+                    supa(env, "sessions?id=eq." + sid + "&select=created_at")
+                ]);
+
+                if (!questions || questions.length === 0) return jsonRes({ error: "Session not found" }, 404);
+
+                return jsonRes({
+                    answers: questions.map(q => q.respuesta),
+                    justificaciones: questions.map(q => q.justificacion || ""),
+                    mensajes: questions.map(q =>
+                        (mensajes || [])
+                            .filter(m => m.question_idx === q.idx)
+                            .map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at }))
+                    ),
+                    accionesDinamicas: questions.map(q => q.accion_dinamica || null),
+                    createdAt: sessions?.[0]?.created_at
+                });
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }
         }
 
-        // ── GET /helper ──
+        // ── GET /api/status?s=ID ──
+        if (path === "/api/status" && request.method === "GET") {
+            try {
+                const sid = url.searchParams.get("s");
+                if (!sid) return jsonRes({ active: false });
+
+                const [sessions, questions] = await Promise.all([
+                    supa(env, "sessions?id=eq." + sid),
+                    supa(env, "questions?session_id=eq." + sid + "&select=respuesta")
+                ]);
+
+                if (!sessions || sessions.length === 0) return jsonRes({ active: false });
+                const sess = sessions[0];
+
+                return jsonRes({
+                    active: true,
+                    createdAt: sess.created_at,
+                    nombre: sess.nombre || sess.id,
+                    nombreCompleto: sess.nombre_completo || "",
+                    total: (questions || []).length,
+                    answered: (questions || []).filter(q => q.respuesta).length
+                });
+            } catch (e) {
+                return jsonRes({ active: false });
+            }
+        }
+
+        // ── GET /api/sessions — Lista de sesiones con conteo de respuestas ──
+        if (path === "/api/sessions" && request.method === "GET") {
+            try {
+                // PostgREST embedding: trae sesiones con sus preguntas (solo respuesta)
+                const sessions = await supa(env,
+                    "sessions?select=id,nombre,nombre_completo,created_at,questions(respuesta)&order=created_at.desc&limit=30"
+                );
+
+                const result = (sessions || []).map(s => ({
+                    id: s.id,
+                    nombre: s.nombre || s.id,
+                    nombreCompleto: s.nombre_completo || "",
+                    createdAt: s.created_at,
+                    total: (s.questions || []).length,
+                    answered: (s.questions || []).filter(q => q.respuesta).length
+                }));
+
+                return jsonRes({ sessions: result });
+            } catch (e) {
+                return jsonRes({ error: e.message }, 500);
+            }
+        }
+
+        // ── GET /helper — Sirve helper.html con credenciales Supabase inyectadas ──
         if (path === "/helper") {
-            const html = await fetchGitHub("helper.html");
+            let html = await fetchGitHub("helper.html");
             if (!html) return new Response("Error cargando helper.html", { status: 500, headers: CORS });
+            html = html.replace('"DEPLOY_SUPABASE_URL"', '"' + (env.SUPABASE_URL || '') + '"');
+            html = html.replace('"DEPLOY_SUPABASE_ANON_KEY"', '"' + (env.SUPABASE_ANON_KEY || '') + '"');
             return new Response(html, {
                 headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...CORS }
             });
         }
 
-        // ── GET / — client_friend.js ──
+        // ── GET / — client_friend.js con credenciales inyectadas ──
         const script = await fetchGitHub("client_friend.js");
         if (!script) return new Response("Error cargando client_friend.js", { status: 500, headers: CORS });
-        const processed = script.replace('"DEPLOY_WORKER_URL"', '"' + url.origin + '"');
+        let processed = script.replace('"DEPLOY_WORKER_URL"', '"' + url.origin + '"');
+        processed = processed.replace('"DEPLOY_SUPABASE_URL"', '"' + (env.SUPABASE_URL || '') + '"');
+        processed = processed.replace('"DEPLOY_SUPABASE_ANON_KEY"', '"' + (env.SUPABASE_ANON_KEY || '') + '"');
         return new Response(processed, {
             headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store", ...CORS }
         });
