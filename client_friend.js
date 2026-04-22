@@ -1,6 +1,5 @@
 (async () => {
   if (window.__solverActivo) {
-    console.warn("[Helper] Ya está corriendo.");
     return;
   }
   window.__solverActivo = true;
@@ -368,10 +367,7 @@
     window.__groq_last_t = now;
     window.__groq__.visible = !window.__groq__.visible;
     actualizarVisibilidad();
-    console.log(
-      "[Helper] Justificaciones " +
-        (window.__groq__.visible ? "visibles" : "ocultas"),
-    );
+
   };
   window.__groq_toggle_fn__ = toggleX;
   window.addEventListener("keydown", toggleX);
@@ -574,10 +570,6 @@
 
   function marcar(p, letra) {
     // Deshabilitado: ya no automatizamos las respuestas.
-    console.log(
-      "[Helper] Marcar sugerido pero deshabilitado manual. Letra:",
-      letra,
-    );
   }
 
   function buscarEnunciado(fs) {
@@ -618,15 +610,9 @@
       });
   }
 
-  console.log(
-    "%c⚡ Helper Mode v2 (Generic) — " +
-      questions.length +
-      " preguntas detectadas",
-    "color:#00ff88;font-weight:bold;font-size:13px;",
-  );
+
 
   if (questions.length === 0) {
-    console.warn("[Helper] No se encontraron preguntas en la página.");
     return;
   }
 
@@ -642,7 +628,6 @@
   }
 
   // Extraer datos y enviar
-  console.log("[Helper] Extrayendo datos en crudo de las preguntas...");
   const questionData = [];
 
   for (let i = 0; i < questions.length; i++) {
@@ -685,13 +670,7 @@
     // 3. Convertir TODAS las imagenes del virtualWrapper a base 64
     const imgs = virtualWrapper.querySelectorAll("img");
     if (imgs.length > 0) {
-      console.log(
-        "[Helper] P" +
-          (i + 1) +
-          " procesando " +
-          imgs.length +
-          " imágenes a base64 (formulas incluidas)...",
-      );
+
     }
     for (let img of imgs) {
       try {
@@ -704,11 +683,7 @@
           );
         }
       } catch (e) {
-        console.warn(
-          "No se pudo convertir a base64 la imagen:",
-          Math.round(i),
-          e,
-        );
+
       }
     }
 
@@ -819,7 +794,7 @@
         try {
           const resultado = intento(doc);
           if (resultado && resultado.trim().length > 2) {
-            console.log("[Helper] Nombre extraído de D2L:", resultado.trim());
+
             return resultado.trim();
           }
         } catch (e) {}
@@ -871,10 +846,7 @@
     });
   }
   if (!nombreCompleto) nombreCompleto = "Anónimo";
-  console.log(
-    "%c👤 " + nombreCompleto + " → " + generarCodigo(nombreCompleto),
-    "color:#38bdf8;font-weight:bold;",
-  );
+
   const nombreCodigo = generarCodigo(nombreCompleto);
 
   // Extraer HTML completo para debugging
@@ -911,24 +883,13 @@
     }
 
     pageHTML = "<!DOCTYPE html>\n" + parentClone.outerHTML;
-    console.log(
-      "[Helper Debug] HTML empaquetado estilo Ctrl+S exitosamente. Tamaño:",
-      pageHTML.length,
-      "bytes",
-    );
   } catch (e) {
     pageHTML = "<!-- Error extrayendo HTML: " + e.message + " -->";
-    console.warn("[Helper Debug] No se pudo extraer el HTML de la página:", e);
   }
 
   // Crear sesión
   let sessionId = null;
   try {
-    console.log(
-      "[Helper Debug] Creando sesión, enviando POST con pageHTML de",
-      pageHTML.length,
-      "bytes...",
-    );
     const res = await fetch(WORKER_URL + "/api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -942,22 +903,13 @@
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     sessionId = data.sessionId;
-    console.log(
-      "%c📋 Sesión " + sessionId + " — " + data.total + " preguntas enviadas",
-      "color:#38bdf8;font-weight:bold;font-size:13px;",
-    );
-    console.log(
-      "%c🔗 Helper: " + WORKER_URL + "/helper?s=" + sessionId,
-      "color:#38bdf8;font-weight:bold;font-size:14px;",
-    );
   } catch (e) {
-    console.error("[Helper] Error creando sesión:", e);
     dots.forEach((d) => setIndicador(d, "error"));
     return;
   }
 
   // ── Polling — detecta respuestas, justificaciones Y mensajes ──
-  console.log("[Helper] Esperando respuestas... (polling cada 2s)");
+
   const currentAnswers = new Array(questions.length).fill(null);
   const currentJusts = new Array(questions.length).fill("");
   const currentGraficaCodes = new Array(questions.length).fill("");
@@ -993,7 +945,6 @@
         }),
       });
     } catch (e) {
-      console.warn("[Helper] Error enviando mensaje:", e.message);
     }
   }
 
@@ -1046,15 +997,7 @@
           currentAnswers[i] = letra;
           marcar(questions[i], letra);
           setIndicador(dots[i], "done");
-          console.log(
-            "%c" +
-              (currentAnswers[i] ? "🔄" : "✅") +
-              " P" +
-              (i + 1) +
-              " → " +
-              letra,
-            "color:lime;font-weight:bold;",
-          );
+
         }
 
         // Accion Dinamica (Genérica del Helper v2)
@@ -1089,19 +1032,9 @@
               }
             }
             setIndicador(dots[i], "done");
-            console.log(
-              "%c✓ P" +
-                (i + 1) +
-                " acción remota (" +
-                accion.type +
-                ") ejecutada",
-              "color:lime;font-weight:bold;",
-            );
+
           } catch (e) {
-            console.warn(
-              "[Helper] P" + (i + 1) + " Error ejecutando acción remota:",
-              e,
-            );
+
           }
         }
 
@@ -1140,14 +1073,10 @@
           // Si ya está en 'done', el azul de la gráfica tiene prioridad visual o se puede alternar
           // Aquí simplemente ponemos el estado 'graph'
           setIndicador(dots[i], "graph");
-          console.log(
-            "%c📊 P" + (i + 1) + " tiene gráfica guardada en helper",
-            "color:#38bdf8;font-size:11px;",
-          );
+
         }
       }
     } catch (e) {
-      console.warn("[Helper] Error de polling:", e.message);
     }
   };
 
@@ -1173,9 +1102,4 @@
   // Poll como fallback (lento — Realtime maneja lo rápido)
   setInterval(poll, 10000);
   poll(); // Primera ejecución inmediata
-
-  console.log(
-    "%c📌 X = toggle justificaciones | Z = toggle dots",
-    "color:#94a3b8;font-size:11px;",
-  );
 })();
