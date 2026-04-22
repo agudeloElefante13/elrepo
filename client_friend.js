@@ -726,7 +726,6 @@
           if (/usuario actual/i.test(label.textContent)) {
             const div = label.nextElementSibling;
             if (div) {
-              // Formato: "JUAN ESTEBAN VELEZ MONTOYA (nombre de usuario: jevelezm1)"
               const text = div.textContent.trim();
               const match = text.match(/^(.+?)\s*\(nombre de usuario:/i);
               return match ? match[1].trim() : text.split("(")[0].trim();
