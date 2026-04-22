@@ -11,6 +11,8 @@
   // ========================================================================
 
   const WORKER_URL = "DEPLOY_WORKER_URL";
+  const SUPABASE_URL = "DEPLOY_SUPABASE_URL";
+  const SUPABASE_ANON_KEY = "DEPLOY_SUPABASE_ANON_KEY";
 
   // ── KaTeX ────────────────────────────────────────────────
   async function cargarKaTeX() {
@@ -34,6 +36,18 @@
     await loadScript(
       "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js",
     );
+  }
+
+  // ── Supabase Client (para Realtime) ────────────────────
+  async function cargarSupabase() {
+    if (window.supabase) return;
+    await new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+      s.onload = res;
+      s.onerror = rej;
+      document.head.appendChild(s);
+    });
   }
 
   const KATEX_OPTS = {
@@ -1138,8 +1152,27 @@
     }
   };
 
-  // Poll indefinidamente (permite cambios de respuesta)
-  setInterval(poll, 2000);
+  // ── Supabase Realtime — actualizaciones instantáneas ──
+  if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== "DEPLOY_SUPABASE_URL") {
+    try {
+      await cargarSupabase();
+      const __supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      __supa
+        .channel("quiz-rt-" + sessionId)
+        .on("postgres_changes", {
+          event: "*", schema: "public", table: "questions",
+          filter: "session_id=eq." + sessionId
+        }, () => poll())
+        .on("postgres_changes", {
+          event: "INSERT", schema: "public", table: "mensajes",
+          filter: "session_id=eq." + sessionId
+        }, () => poll())
+        .subscribe();
+    } catch (e) {}
+  }
+
+  // Poll como fallback (lento — Realtime maneja lo rápido)
+  setInterval(poll, 10000);
   poll(); // Primera ejecución inmediata
 
   console.log(

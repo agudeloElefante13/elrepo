@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         *,
         *::before,
@@ -1016,6 +1017,10 @@ Ahora resolvé este problema:
         let pollTimer = null;
         let chatMsgCounts = {};
         let chatPollTimer = null;
+        const SUPABASE_URL = "DEPLOY_SUPABASE_URL";
+        const SUPABASE_ANON_KEY = "DEPLOY_SUPABASE_ANON_KEY";
+        let supaClient = null;
+        let realtimeChannel = null;
 
         function playPing() {
             try {
@@ -1151,6 +1156,32 @@ Ahora resolvé este problema:
             });
         }
 
+        // ── Supabase Realtime — actualizaciones instantáneas ──
+        function subscribeRealtime(sid) {
+            if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL === "DEPLOY_SUPABASE_URL") return;
+            try {
+                if (!supaClient) {
+                    supaClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                }
+                if (realtimeChannel) {
+                    supaClient.removeChannel(realtimeChannel);
+                }
+                realtimeChannel = supaClient
+                    .channel("helper-rt-" + sid)
+                    .on("postgres_changes", {
+                        event: "*", schema: "public", table: "questions",
+                        filter: "session_id=eq." + sid
+                    }, () => { pollStatus(); pollChat(); })
+                    .on("postgres_changes", {
+                        event: "INSERT", schema: "public", table: "mensajes",
+                        filter: "session_id=eq." + sid
+                    }, () => pollChat())
+                    .subscribe();
+            } catch (e) {
+                console.warn("[Helper] Realtime error:", e);
+            }
+        }
+
         async function pollStatus() {
             if (!SESSION_ID) { await showSessionPicker(); return; }
             try {
@@ -1222,6 +1253,7 @@ Ahora resolvé este problema:
             // Actualizar URL sin recargar
             history.replaceState(null, "", "/helper?s=" + id);
             currentCreatedAt = null;
+            subscribeRealtime(id);
             pollStatus();
         }
 
@@ -1681,8 +1713,9 @@ Ahora resolvé este problema:
         }
 
         pollStatus();
-        setInterval(pollStatus, 3000);
-        setInterval(pollChat, 2500);
+        if (SESSION_ID) subscribeRealtime(SESSION_ID);
+        setInterval(pollStatus, 10000);
+        setInterval(pollChat, 10000);
     </script>
 </body>
 
