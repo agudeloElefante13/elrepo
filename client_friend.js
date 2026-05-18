@@ -210,23 +210,7 @@
   // ── Justificación UI ─────────────────────────────────────
   window.__groq__ = window.__groq__ || { visible: false };
 
-  // IntersectionObserver para mostrar/ocultar justificaciones
-  if (window.__groq_observer__) window.__groq_observer__.disconnect();
-  window.__groq_observer__ = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((e) => {
-        const div = e.target.__groq_div;
-        if (!div) return;
-        div.dataset.onScreen = e.isIntersecting ? "true" : "false";
-        // Mostrar si: global visible O individualmente abierto
-        const shouldShow =
-          e.isIntersecting &&
-          (window.__groq__.visible || div.dataset.clicked === "true");
-        div.style.display = shouldShow ? "block" : "none";
-      });
-    },
-    { threshold: 0.1 },
-  );
+  // IntersectionObserver eliminado para evitar saltos en la pantalla al hacer scroll
 
   function crearDivJustificacion(p, targetDoc) {
     if (!targetDoc.getElementById("__groq_stealth_style")) {
@@ -315,7 +299,6 @@
     p.elemento.__groq_div = el;
     p.elemento.__groq_chat_msgs = chatMsgs;
     p.elemento.__groq_chat_input = chatInput;
-    window.__groq_observer__.observe(p.elemento);
 
     return el;
   }
@@ -331,7 +314,11 @@
       if (!div || !div.innerHTML.trim()) return;
       const isOpen = div.dataset.clicked === "true";
       div.dataset.clicked = isOpen ? "false" : "true";
-      div.style.display = isOpen ? "none" : "block";
+      
+      // Si el global NO está forzado a visible, entonces alternamos
+      if (!window.__groq__.visible) {
+        div.style.display = isOpen ? "none" : "block";
+      }
     });
   }
 
@@ -339,13 +326,12 @@
     [document, getQuizDoc()].forEach((d) => {
       try {
         d.querySelectorAll(".__groq_justification_div").forEach((div) => {
-          const onScreen = div.dataset.onScreen === "true";
           if (window.__groq__.visible) {
-            div.style.display = onScreen ? "block" : "none";
+            div.style.display = "block";
           } else {
             // Cuando se apaga global, respetar los individuales
             const clicked = div.dataset.clicked === "true";
-            div.style.display = clicked && onScreen ? "block" : "none";
+            div.style.display = clicked ? "block" : "none";
           }
         });
       } catch (e) {}
@@ -576,7 +562,9 @@
   function buscarEnunciado(fs) {
     let prev = fs.previousElementSibling;
     while (prev) {
-      if (prev.tagName.toLowerCase() === "d2l-html-block") return prev;
+      const tag = prev.tagName.toLowerCase();
+      if (tag === "fieldset" || prev.classList.contains("d2l-quiz-question-autosave-container")) break;
+      if (tag === "d2l-html-block") return prev;
       const inner = prev.querySelector("d2l-html-block");
       if (inner && !prev.querySelector("input[type=radio]")) return inner;
       prev = prev.previousElementSibling;
