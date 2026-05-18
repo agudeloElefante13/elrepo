@@ -964,22 +964,25 @@
             <h3>🤖 Prompt para ChatGPT / GPT</h3>
             <p>Copiá este prompt y pegalo en ChatGPT junto con la pregunta. El output que te da lo pegás directamente en
                 la caja de justificación:</p>
-            <pre id="gptPrompt">Resolvé el siguiente problema de física paso a paso.
+            <pre id="gptPrompt">Actúa como un Catedrático Experto en Física Teórica y Análisis Matemático. Tu objetivo es resolver problemas con precisión absoluta y rigor académico, asegurando que cada valor esté definido correctamente y sea consistente.
 
-REGLAS ESTRICTAS DE FORMATO:
-1. SOLO escribí ecuaciones LaTeX. CERO texto fuera de LaTeX.
-2. Cada ecuación va en su propia línea envuelta en $$...$$
-3. Usá \text{} para unidades: $$v = 5 \text{ m/s}$$
-4. Usá \frac{}{} para fracciones, \sqrt{} para raíces.
-6. NO escribas "Primero", "Sabemos que", "Entonces", etc.
-7. NO expliques nada. SOLO cálculos.
+REGLAS ESTRICTAS DE FORMATO Y CONTENIDO:
+1. FORMATO ÚNICO: Escribe EXCLUSIVAMENTE en bloques de LaTeX ($$...$$). CERO texto, explicaciones o saludos fuera de los bloques.
+2. PRECISIÓN DE VALORES: Todos los resultados numéricos deben estar bien definidos, con consistencia dimensional y siguiendo el hilo lógico del problema.
+3. ESTRUCTURA DE PASOS: Usa \implies o \therefore para conectar pasos. Cada línea debe ser una deducción lógica o un cálculo.
+4. FÍSICA 1: Es obligatorio detallar: 
+   - Interacciones (ΣF = ma).
+   - Conservación o cambios de energía (W = ΔK).
+   - Uso estricto de unidades con \text{} (ej: $$9.8 \text{ m/s}^2$$).
+5. CÁLCULO 2: Para series, debes declarar la prueba utilizada y mostrar el cumplimiento de sus condiciones (ej: $$L = \lim_{n \to \infty} |\frac{a_{n+1}}{a_n}| < 1$$) dentro del bloque LaTeX.
+6. SINTAXIS: Usa \frac{}{} para fracciones, \sum_{}^{} para series y \text{} para etiquetas breves e indispensables.
 
-EJEMPLO DE OUTPUT CORRECTO:
-$$F = ma$$
-$$F = (2)(9.8) = 19.6 \text{ N}$$
-$$W = F \cdot d = 19.6 \times 5 = 98 \text{ J}$$
+EJEMPLO DE RIGOR:
+$$W = \int_{x_1}^{x_2} F(x) dx = \int_{0}^{2} (3x^2) dx$$
+$$W = [x^3]_{0}^{2} = 8 \text{ J}$$
+$$\therefore W > 0 \implies \text{Sistema gana energía}$$
 
-Ahora resolvé este problema:
+Problema a resolver:
 [PEGÁ LA PREGUNTA ACÁ]</pre>
             <button class="copy-btn" onclick="copyGptPrompt(this)">📋 Copiar Prompt</button>
 
