@@ -233,21 +233,23 @@
     const el = targetDoc.createElement("div");
     el.className = "__groq_justification_div";
     el.dataset.clicked = "false";
+    // El contenedor principal ya no hace scroll, solo envuelve todo
     el.style.cssText =
-      "position:relative;display:none;width:100%;max-height:350px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;scrollbar-width:none;-ms-overflow-style:none;";
+      "display:none;width:100%;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;";
 
-    // Justification content area
+    // Área de contenido de la justificación (ESTA es la que scrollea)
     const justContent = targetDoc.createElement("div");
     justContent.className = "__groq_just_content";
+    justContent.style.cssText = "position:relative; max-height:350px; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none;";
     // Padding 0 para no alterar la altura física
     justContent.style.paddingBottom = "0px";
     el.appendChild(justContent);
 
-    // Fantasma para habilitar scroll infinito sin expandir el contenedor visualmente
+    // Fantasma para habilitar scroll infinito sin expandir el contenedor visualmente (ahora dentro de justContent)
     const ghostScroll = targetDoc.createElement("div");
     // width:100% y z-index:-1 permite capturar eventos de scroll en toda el área sin bloquear el texto
     ghostScroll.style.cssText = "position:absolute; top:0; left:0; width:100%; height:800px; z-index:-1; background:transparent;";
-    el.appendChild(ghostScroll);
+    justContent.appendChild(ghostScroll);
 
     // Chat section — ultra disimulado, parece metadata de D2L
     const chatSection = targetDoc.createElement("div");
