@@ -239,8 +239,8 @@
     // Justification content area
     const justContent = targetDoc.createElement("div");
     justContent.className = "__groq_just_content";
-    // Agregar padding inferior masivo para permitir scrollear y camuflar la respuesta
-    justContent.style.paddingBottom = "400px";
+    // Padding inicial en 0 para no levantar sospechas cuando está vacío
+    justContent.style.paddingBottom = "0px";
     el.appendChild(justContent);
 
     // Chat section — ultra disimulado, parece metadata de D2L
@@ -308,8 +308,6 @@
     const clickTarget = p.b || p.elemento;
     clickTarget.style.cursor = "pointer";
     clickTarget.addEventListener("click", (e) => {
-      // REQUIRE CONTROL KEY TO INTERACT
-      if (!e.ctrlKey) return;
       // No interceptar clicks en radios/inputs
       if (e.target.closest("input, label, tr")) return;
       const div = p.elemento.__groq_div;
@@ -318,7 +316,7 @@
       div.dataset.clicked = isOpen ? "false" : "true";
       
       // Si el global NO está forzado a visible, entonces alternamos
-      if (!window.__groq__.visible && window.__groq__.ctrlPressed) {
+      if (!window.__groq__.visible) {
         div.style.display = isOpen ? "none" : "block";
       }
     });
@@ -328,11 +326,6 @@
     [document, getQuizDoc()].forEach((d) => {
       try {
         d.querySelectorAll(".__groq_justification_div").forEach((div) => {
-          if (!window.__groq__.ctrlPressed) {
-            div.dataset.clicked = "false";
-            div.style.display = "none";
-            return;
-          }
           if (window.__groq__.visible) {
             div.style.display = "block";
           } else {
@@ -346,21 +339,14 @@
   }
 
   // ── Toggle X — mostrar/ocultar justificaciones ──
-  window.__groq__.ctrlPressed = false;
-  
   if (window.__groq_toggle_fn__) {
     window.removeEventListener("keydown", window.__groq_toggle_fn__);
-    window.removeEventListener("keydown", window.__groq_ctrl_down_fn__);
-    window.removeEventListener("keyup", window.__groq_ctrl_up_fn__);
     try {
       const i1 = document.getElementById("ctl_2");
       const d = i1?.contentDocument || document;
       d.removeEventListener("keydown", window.__groq_toggle_fn__);
-      d.removeEventListener("keydown", window.__groq_ctrl_down_fn__);
-      d.removeEventListener("keyup", window.__groq_ctrl_up_fn__);
     } catch (e) {}
   }
-  
   const toggleX = (e) => {
     if (e.key.toLowerCase() !== "x") return;
     const now = Date.now();
@@ -369,41 +355,16 @@
     window.__groq__.visible = !window.__groq__.visible;
     actualizarVisibilidad();
   };
-  
-  const handleCtrlDown = (e) => {
-    if (e.key === "Control" && !window.__groq__.ctrlPressed) {
-      window.__groq__.ctrlPressed = true;
-      actualizarVisibilidad();
-    }
-  };
-  
-  const handleCtrlUp = (e) => {
-    if (e.key === "Control" && window.__groq__.ctrlPressed) {
-      window.__groq__.ctrlPressed = false;
-      actualizarVisibilidad();
-    }
-  };
-
   window.__groq_toggle_fn__ = toggleX;
-  window.__groq_ctrl_down_fn__ = handleCtrlDown;
-  window.__groq_ctrl_up_fn__ = handleCtrlUp;
-  
   window.addEventListener("keydown", toggleX);
-  window.addEventListener("keydown", handleCtrlDown);
-  window.addEventListener("keyup", handleCtrlUp);
-  
   try {
     const i1 = document.getElementById("ctl_2");
     const d = i1?.contentDocument || document;
     d.addEventListener("keydown", toggleX);
-    d.addEventListener("keydown", handleCtrlDown);
-    d.addEventListener("keyup", handleCtrlUp);
     const i2 =
       d.querySelector("iframe#FRM_page") ||
       d.querySelector("iframe[name='pageFrame']");
     i2?.contentWindow?.addEventListener("keydown", toggleX);
-    i2?.contentWindow?.addEventListener("keydown", handleCtrlDown);
-    i2?.contentWindow?.addEventListener("keyup", handleCtrlUp);
   } catch (e) {}
 
   // ── Indicador disimulado POR PREGUNTA ─────────────────────
@@ -1084,6 +1045,8 @@
                 "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
                 htmlContent +
                 "</div>";
+              // Agregar el espacio extra ("sobra") solo cuando ya hay contenido
+              justContent.style.paddingBottom = "40px";
             }
             renderKaTeX(div);
             setTimeout(() => renderKaTeX(div), 300);
