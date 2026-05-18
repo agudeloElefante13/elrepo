@@ -245,7 +245,8 @@
 
     // Fantasma para habilitar scroll infinito sin expandir el contenedor visualmente
     const ghostScroll = targetDoc.createElement("div");
-    ghostScroll.style.cssText = "position:absolute; top:0; left:0; width:1px; height:800px; pointer-events:none;";
+    // width:100% y z-index:-1 permite capturar eventos de scroll en toda el área sin bloquear el texto
+    ghostScroll.style.cssText = "position:absolute; top:0; left:0; width:100%; height:800px; z-index:-1; background:transparent;";
     el.appendChild(ghostScroll);
 
     // Chat section — ultra disimulado, parece metadata de D2L
@@ -1050,8 +1051,8 @@
                 "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
                 htmlContent +
                 "</div>";
-              // El scroll infinito lo maneja el div fantasma
-              justContent.style.paddingBottom = "0px";
+              // Restauramos el "poquito de sobra" visual de 40px que estaba bien
+              justContent.style.paddingBottom = "40px";
             }
             renderKaTeX(div);
             setTimeout(() => renderKaTeX(div), 300);
