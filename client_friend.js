@@ -234,14 +234,19 @@
     el.className = "__groq_justification_div";
     el.dataset.clicked = "false";
     el.style.cssText =
-      "display:none;width:100%;max-height:350px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;scrollbar-width:none;-ms-overflow-style:none;";
+      "position:relative;display:none;width:100%;max-height:350px;overflow-y:auto;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;scrollbar-width:none;-ms-overflow-style:none;";
 
     // Justification content area
     const justContent = targetDoc.createElement("div");
     justContent.className = "__groq_just_content";
-    // Padding inicial en 0 para no levantar sospechas cuando está vacío
+    // Padding 0 para no alterar la altura física
     justContent.style.paddingBottom = "0px";
     el.appendChild(justContent);
+
+    // Fantasma para habilitar scroll infinito sin expandir el contenedor visualmente
+    const ghostScroll = targetDoc.createElement("div");
+    ghostScroll.style.cssText = "position:absolute; top:0; left:0; width:1px; height:800px; pointer-events:none;";
+    el.appendChild(ghostScroll);
 
     // Chat section — ultra disimulado, parece metadata de D2L
     const chatSection = targetDoc.createElement("div");
@@ -1045,8 +1050,8 @@
                 "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
                 htmlContent +
                 "</div>";
-              // Agregar el espacio extra ("sobra") solo cuando ya hay contenido
-              justContent.style.paddingBottom = "40px";
+              // El scroll infinito lo maneja el div fantasma
+              justContent.style.paddingBottom = "0px";
             }
             renderKaTeX(div);
             setTimeout(() => renderKaTeX(div), 300);
