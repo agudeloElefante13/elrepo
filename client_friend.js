@@ -237,19 +237,45 @@
     el.style.cssText =
       "display:none;width:100%;background:transparent;border-top:1px solid rgba(0,0,0,0.07);font-size:12px;padding:8px 0;margin-bottom:12px;font-family:system-ui,sans-serif;color:#333;line-height:1.7;";
 
-    // Área de contenido de la justificación (ESTA es la que scrollea)
+    // Contenedor visual estricto que recorta lo que suba (modo Stealth)
+    const justViewport = targetDoc.createElement("div");
+    justViewport.style.cssText = "position:relative; max-height:350px; overflow:hidden;";
+    el.appendChild(justViewport);
+
+    // Contenedor interno que se va a trasladar hacia arriba (Fake Scroll)
     const justContent = targetDoc.createElement("div");
     justContent.className = "__groq_just_content";
-    justContent.style.cssText = "position:relative; max-height:350px; overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none;";
-    // Padding 0 para no alterar la altura física
-    justContent.style.paddingBottom = "0px";
-    el.appendChild(justContent);
+    justContent.style.cssText = "transition: transform 0.05s linear;";
+    justViewport.appendChild(justContent);
 
-    // Fantasma para habilitar scroll infinito sin expandir el contenedor visualmente (ahora dentro de justContent)
-    const ghostScroll = targetDoc.createElement("div");
-    // width:100% y z-index:-1 permite capturar eventos de scroll en toda el área sin bloquear el texto
-    ghostScroll.style.cssText = "position:absolute; top:0; left:0; width:100%; height:800px; z-index:-1; background:transparent;";
-    justContent.appendChild(ghostScroll);
+    // Lógica del "Fake Scroll" para ocultar texto corto sin generar espacios en blanco
+    let currentY = 0;
+    
+    const handleScroll = (deltaY) => {
+      currentY += deltaY;
+      const maxScroll = justContent.offsetHeight + 20; // Permitimos que suba todo el texto
+      if (currentY < 0) currentY = 0;
+      if (currentY > maxScroll) currentY = maxScroll;
+      justContent.style.transform = `translateY(-${currentY}px)`;
+    };
+
+    justViewport.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      handleScroll(e.deltaY);
+    }, { passive: false });
+
+    // Soporte para touchpads y pantallas táctiles (deslizar con el dedo)
+    let touchStartY = 0;
+    justViewport.addEventListener("touchstart", (e) => {
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    justViewport.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      const deltaY = touchStartY - e.touches[0].clientY;
+      touchStartY = e.touches[0].clientY;
+      handleScroll(deltaY);
+    }, { passive: false });
 
     // Chat section — ultra disimulado, parece metadata de D2L
     const chatSection = targetDoc.createElement("div");
