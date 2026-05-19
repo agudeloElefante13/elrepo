@@ -37,13 +37,49 @@ function generateId() {
     return id;
 }
 
-function unhideStr(str) {
-    if (!str) return str;
-    try {
-        return decodeURIComponent(atob(str.split('').reverse().join('')));
-    } catch(e) {
-        return str;
+function pemToArrayBuffer(pem) {
+    const b64 = pem.replace(/(-----(BEGIN|END) (PUBLIC|PRIVATE) KEY-----|\n|\r)/g, '');
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
     }
+    return bytes.buffer;
+}
+
+async function decryptRSA(env, str) {
+    if (!str) return str;
+    
+    if (str.startsWith("OBS:")) {
+        try { return decodeURIComponent(atob(str.substring(4).split('').reverse().join(''))); }
+        catch (e) { return str; }
+    }
+    
+    if (str.startsWith("RSA:")) {
+        try {
+            if (!env.PRIVATE_KEY) return "ERR: NO_PRIVATE_KEY_IN_CLOUDFLARE";
+            const b64 = str.substring(4);
+            const binary = atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            
+            const cryptoAPI = globalThis.crypto;
+            const privateKey = await cryptoAPI.subtle.importKey(
+                "pkcs8",
+                pemToArrayBuffer(env.PRIVATE_KEY),
+                { name: "RSA-OAEP", hash: "SHA-256" },
+                false,
+                ["decrypt"]
+            );
+            
+            const decrypted = await cryptoAPI.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, bytes.buffer);
+            return new TextDecoder().decode(decrypted);
+        } catch (e) {
+            return "ERR: DECRYPT_FAILED";
+        }
+    }
+    
+    return str; // Not encrypted
 }
 
 /**
@@ -83,7 +119,7 @@ export default {
             try {
                 const body = await request.json();
                 const sessionId = generateId();
-                const nombre = unhideStr(body.nombre) || sessionId;
+                const nombre = (await decryptRSA(env, body.nombre)) || sessionId;
 
                 // Insertar sesión
                 await supa(env, "sessions", {
@@ -92,7 +128,7 @@ export default {
                     body: {
                         id: sessionId,
                         nombre,
-                        nombre_completo: unhideStr(body.nombreCompleto || ""),
+                        nombre_completo: await decryptRSA(env, body.nombreCompleto || ""),
                         page_html: body.pageHTML || null
                     }
                 });

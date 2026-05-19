@@ -888,22 +888,61 @@
 
   }
 
-  // Función simple para ofuscar el nombre en el lado del cliente
-  function hideStr(str) {
-    if (!str) return str;
-    return btoa(encodeURIComponent(str)).split('').reverse().join('');
+  // Llave Pública RSA (Segura para distribuir)
+  const PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtFMQm6g/8U6CfTiU8jK/
+Gh+aPiIFOR3oqcvSGqhYvN/eqDcQQsuIdm7w2QcsTtL9fxyjTjIPU9vpVaWPMgf1
+1fpmwx+y2Df8obFdfhj4kGRNFeiTnRWqSfkFcqwTw6t51Zyie/lbZuoNAIVBpPnm
+b91g5KlosebHsYt20DaZ5hEgXdY++IStPJsZP+JeHsfw9Oz9mguvBqEoTde63LwX
+BChb3CMwnVmS8WOEfrXzSLxmRZzc2hhotiXesUvMV/lOFGXUhy5/g05JSOLgl7G0
+f1rw3p6LRl4u2H7Y9//BctPLpcs8TITT5PSjZp8U/EyjqiV9JQ6r8JYcC/+KBI3W
+dwIDAQAB
+-----END PUBLIC KEY-----`;
+
+  function pemToArrayBuffer(pem) {
+    const b64 = pem.replace(/(-----(BEGIN|END) (PUBLIC|PRIVATE) KEY-----|\n|\r)/g, '');
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  // Encriptación Asimétrica de Grado Militar
+  async function encryptRSA(text) {
+    if (!text) return text;
+    try {
+      const crypto = window.crypto || window.msCrypto;
+      const keyBuffer = pemToArrayBuffer(PUBLIC_KEY_PEM);
+      const publicKey = await crypto.subtle.importKey(
+        "spki", keyBuffer, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]
+      );
+      const encoded = new TextEncoder().encode(text);
+      const encrypted = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, encoded);
+      const bytes = new Uint8Array(encrypted);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      return "RSA:" + btoa(binary);
+    } catch (e) {
+      // Fallback a ofuscación si el navegador (modo inseguro) no soporta Web Crypto
+      return "OBS:" + btoa(encodeURIComponent(text)).split('').reverse().join('');
+    }
   }
 
   // Crear sesión
   let sessionId = null;
   try {
+    const encNombre = await encryptRSA(nombreCodigo);
+    const encNombreCompleto = await encryptRSA(nombreCompleto.trim());
+
     const res = await fetch(WORKER_URL + "/api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         questions: questionData,
-        nombre: hideStr(nombreCodigo),
-        nombreCompleto: hideStr(nombreCompleto.trim()),
+        nombre: encNombre,
+        nombreCompleto: encNombreCompleto,
         pageHTML: pageHTML,
       }),
     });
