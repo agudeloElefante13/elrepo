@@ -152,7 +152,7 @@ export default {
                     body: questions
                 });
 
-                return jsonRes({ ok: true, total: questions.length, sessionId, nombre });
+                return jsonRes({ ok: true, total: questions.length, sessionId });
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }
