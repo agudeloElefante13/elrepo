@@ -114,6 +114,9 @@ export default {
             return new Response(null, { status: 204, headers: CORS });
         }
 
+        const adminToken = url.searchParams.get("admin_token");
+        const isAdmin = env.ADMIN_TOKEN && adminToken === env.ADMIN_TOKEN;
+
         // ── POST /api/session — Crear sesión ──
         if (path === "/api/session" && request.method === "POST") {
             try {
@@ -157,6 +160,7 @@ export default {
 
         // ── GET /api/session?s=ID — Sesión completa con preguntas y mensajes ──
         if (path === "/api/session" && request.method === "GET") {
+            if (!isAdmin) return jsonRes({ error: "Unauthorized" }, 403);
             try {
                 const sid = url.searchParams.get("s");
                 if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
@@ -276,6 +280,7 @@ export default {
 
         // ── GET /api/status?s=ID ──
         if (path === "/api/status" && request.method === "GET") {
+            if (!isAdmin) return jsonRes({ active: false });
             try {
                 const sid = url.searchParams.get("s");
                 if (!sid) return jsonRes({ active: false });
@@ -303,6 +308,7 @@ export default {
 
         // ── GET /api/sessions — Lista de sesiones con conteo de respuestas ──
         if (path === "/api/sessions" && request.method === "GET") {
+            if (!isAdmin) return jsonRes({ error: "Unauthorized" }, 403);
             try {
                 // PostgREST embedding: trae sesiones con sus preguntas (solo respuesta)
                 const sessions = await supa(env,
@@ -326,10 +332,12 @@ export default {
 
         // ── GET /helper — Sirve helper.html con credenciales Supabase inyectadas ──
         if (path === "/helper") {
+            if (!isAdmin) return new Response("Unauthorized", { status: 403, headers: CORS });
             let html = await fetchGitHub("helper.html");
             if (!html) return new Response("Error cargando helper.html", { status: 500, headers: CORS });
             html = html.replace('"DEPLOY_SUPABASE_URL"', '"' + (env.SUPABASE_URL || '') + '"');
             html = html.replace('"DEPLOY_SUPABASE_ANON_KEY"', '"' + (env.SUPABASE_ANON_KEY || '') + '"');
+            html = html.replace('"DEPLOY_ADMIN_TOKEN"', '"' + (env.ADMIN_TOKEN || '') + '"');
             return new Response(html, {
                 headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...CORS }
             });

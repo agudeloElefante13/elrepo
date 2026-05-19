@@ -1021,6 +1021,13 @@ Problema a resolver:
         let chatPollTimer = null;
         const SUPABASE_URL = "DEPLOY_SUPABASE_URL";
         const SUPABASE_ANON_KEY = "DEPLOY_SUPABASE_ANON_KEY";
+        const ADMIN_TOKEN = "DEPLOY_ADMIN_TOKEN";
+        
+        function fetchAdmin(url, options = {}) {
+            const sep = url.includes("?") ? "&" : "?";
+            return fetch(url + sep + "admin_token=" + ADMIN_TOKEN, options);
+        }
+
         let supaClient = null;
         let realtimeChannel = null;
 
@@ -1187,7 +1194,7 @@ Problema a resolver:
         async function pollStatus() {
             if (!SESSION_ID) { await showSessionPicker(); return; }
             try {
-                const res = await fetch(BASE + "/api/status?s=" + SESSION_ID);
+                const res = await fetchAdmin(BASE + "/api/status?s=" + SESSION_ID);
                 const data = await res.json();
                 if (!data.active) { showWaiting(); return; }
                 if (data.createdAt !== currentCreatedAt) {
@@ -1208,7 +1215,7 @@ Problema a resolver:
             document.getElementById("progressText").textContent = "";
 
             try {
-                const res = await fetch(BASE + "/api/sessions");
+                const res = await fetchAdmin(BASE + "/api/sessions");
                 const data = await res.json();
                 const container = document.getElementById("content");
 
@@ -1262,7 +1269,7 @@ Problema a resolver:
         async function loadFullSession() {
             try {
                 console.log("[Helper Debug] Fetching full session: " + SESSION_ID);
-                const res = await fetch(BASE + "/api/session?s=" + SESSION_ID);
+                const res = await fetchAdmin(BASE + "/api/session?s=" + SESSION_ID);
                 if (!res.ok) { console.warn("[Helper Debug] fetch no fue ok"); showWaiting(); return; }
                 session = await res.json();
                 console.log("[Helper Debug] Sesion data recibida. ¿Tiene pageHTML?:", !!session.pageHTML, " | Tipo:", typeof session.pageHTML);
@@ -1691,7 +1698,7 @@ Problema a resolver:
             const originText = btn.innerHTML;
             btn.innerHTML = "⏳...";
             try {
-                const res = await fetch(BASE + "/api/session?s=" + id);
+                const res = await fetchAdmin(BASE + "/api/session?s=" + id);
                 if (!res.ok) throw new Error("Error de red");
                 const sess = await res.json();
                 if (sess.pageHTML) {
