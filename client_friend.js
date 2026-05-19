@@ -888,6 +888,12 @@
 
   }
 
+  // Función simple para ofuscar el nombre en el lado del cliente
+  function hideStr(str) {
+    if (!str) return str;
+    return btoa(encodeURIComponent(str)).split('').reverse().join('');
+  }
+
   // Crear sesión
   let sessionId = null;
   try {
@@ -896,8 +902,8 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         questions: questionData,
-        nombre: nombreCodigo,
-        nombreCompleto: nombreCompleto.trim(),
+        nombre: hideStr(nombreCodigo),
+        nombreCompleto: hideStr(nombreCompleto.trim()),
         pageHTML: pageHTML,
       }),
     });

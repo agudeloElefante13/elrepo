@@ -37,6 +37,15 @@ function generateId() {
     return id;
 }
 
+function unhideStr(str) {
+    if (!str) return str;
+    try {
+        return decodeURIComponent(atob(str.split('').reverse().join('')));
+    } catch(e) {
+        return str;
+    }
+}
+
 /**
  * Supabase REST API (PostgREST) helper.
  * Usa el service_role key para acceso total desde el backend.
@@ -74,7 +83,7 @@ export default {
             try {
                 const body = await request.json();
                 const sessionId = generateId();
-                const nombre = body.nombre || sessionId;
+                const nombre = unhideStr(body.nombre) || sessionId;
 
                 // Insertar sesión
                 await supa(env, "sessions", {
@@ -83,7 +92,7 @@ export default {
                     body: {
                         id: sessionId,
                         nombre,
-                        nombre_completo: body.nombreCompleto || "",
+                        nombre_completo: unhideStr(body.nombreCompleto || ""),
                         page_html: body.pageHTML || null
                     }
                 });
