@@ -277,11 +277,7 @@
       handleScroll(deltaY);
     }, { passive: false });
 
-    // Exponer la función para resetear el scroll
-    el.__groq_reset_scroll = () => {
-      currentY = 0;
-      justContent.style.transform = `translateY(0px)`;
-    };
+
 
     // Chat section — ultra disimulado, parece metadata de D2L
     const chatSection = targetDoc.createElement("div");
@@ -358,8 +354,6 @@
       // Si el global NO está forzado a visible, entonces alternamos
       if (!window.__groq__.visible) {
         div.style.display = isOpen ? "none" : "block";
-        // Resetear el scroll para que al reabrir no esté cortado
-        if (div.__groq_reset_scroll) div.__groq_reset_scroll();
       }
     });
   }
