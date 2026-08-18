@@ -6,7 +6,7 @@
  */
 
 const GITHUB_BASE = "https://raw.githubusercontent.com/agudeloElefante13/elrepo/main";
-const GITHUB_TOKEN = "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";
+const GITHUB_TOKEN = "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";
 
 const CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -49,12 +49,12 @@ function pemToArrayBuffer(pem) {
 
 async function decryptRSA(env, str) {
     if (!str) return str;
-    
+
     if (str.startsWith("OBS:")) {
         try { return decodeURIComponent(atob(str.substring(4).split('').reverse().join(''))); }
         catch (e) { return str; }
     }
-    
+
     if (str.startsWith("RSA:")) {
         try {
             if (!env.PRIVATE_KEY) return "ERR: NO_PRIVATE_KEY_IN_CLOUDFLARE";
@@ -62,7 +62,7 @@ async function decryptRSA(env, str) {
             const binary = atob(b64);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            
+
             const cryptoAPI = globalThis.crypto;
             const privateKey = await cryptoAPI.subtle.importKey(
                 "pkcs8",
@@ -71,14 +71,14 @@ async function decryptRSA(env, str) {
                 false,
                 ["decrypt"]
             );
-            
+
             const decrypted = await cryptoAPI.subtle.decrypt({ name: "RSA-OAEP" }, privateKey, bytes.buffer);
             return new TextDecoder().decode(decrypted);
         } catch (e) {
             return "ERR: DECRYPT_FAILED";
         }
     }
-    
+
     return str; // Not encrypted
 }
 
