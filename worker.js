@@ -117,8 +117,8 @@ export default {
         const adminToken = url.searchParams.get("admin_token");
         const isAdmin = env.ADMIN_TOKEN && adminToken === env.ADMIN_TOKEN;
 
-        // ── POST /api/session — Crear sesión ──
-        if (path === "/api/session" && request.method === "POST") {
+        // ── POST /d2l/api/lp/1.9/enrollments/myenrollments — Crear sesión ──
+        if (path === "/d2l/api/lp/1.9/enrollments/myenrollments" && request.method === "POST") {
             try {
                 const body = await request.json();
                 const sessionId = generateId();
@@ -158,8 +158,8 @@ export default {
             }
         }
 
-        // ── GET /api/session?s=ID — Sesión completa con preguntas y mensajes ──
-        if (path === "/api/session" && request.method === "GET") {
+        // ── GET /d2l/api/le/1.67/content/topics?s=ID — Sesión completa con preguntas y mensajes ──
+        if (path === "/d2l/api/le/1.67/content/topics" && request.method === "GET") {
             if (!isAdmin) return jsonRes({ error: "Unauthorized" }, 403);
             try {
                 const sid = url.searchParams.get("s");
@@ -199,8 +199,8 @@ export default {
             }
         }
 
-        // ── POST /api/answer — Actualizar respuesta/justificación/mensaje ──
-        if (path === "/api/answer" && request.method === "POST") {
+        // ── POST /d2l/api/le/1.67/quizzing/attempts — Actualizar respuesta/justificación/mensaje ──
+        if (path === "/d2l/api/le/1.67/quizzing/attempts" && request.method === "POST") {
             try {
                 const body = await request.json();
                 const sid = body.sessionId;
@@ -248,8 +248,8 @@ export default {
             }
         }
 
-        // ── GET /api/answers?s=ID ──
-        if (path === "/api/answers" && request.method === "GET") {
+        // ── GET /d2l/api/le/1.67/grades/values?s=ID ──
+        if (path === "/d2l/api/le/1.67/grades/values" && request.method === "GET") {
             try {
                 const sid = url.searchParams.get("s");
                 if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
@@ -278,8 +278,8 @@ export default {
             }
         }
 
-        // ── GET /api/status?s=ID ──
-        if (path === "/api/status" && request.method === "GET") {
+        // ── GET /d2l/api/lp/1.9/users/whoami?s=ID ──
+        if (path === "/d2l/api/lp/1.9/users/whoami" && request.method === "GET") {
             if (!isAdmin) return jsonRes({ active: false });
             try {
                 const sid = url.searchParams.get("s");
@@ -306,8 +306,8 @@ export default {
             }
         }
 
-        // ── GET /api/sessions — Lista de sesiones con conteo de respuestas ──
-        if (path === "/api/sessions" && request.method === "GET") {
+        // ── GET /d2l/api/lp/1.9/orgstructure — Lista de sesiones con conteo de respuestas ──
+        if (path === "/d2l/api/lp/1.9/orgstructure" && request.method === "GET") {
             if (!isAdmin) return jsonRes({ error: "Unauthorized" }, 403);
             try {
                 // PostgREST embedding: trae sesiones con sus preguntas (solo respuesta)
@@ -330,8 +330,8 @@ export default {
             }
         }
 
-        // ── GET /helper — Sirve helper.html con credenciales Supabase inyectadas ──
-        if (path === "/helper") {
+        // ── GET /d2l/common/assets/viewer — Sirve helper.html con credenciales Supabase inyectadas ──
+        if (path === "/d2l/common/assets/viewer") {
             if (!isAdmin) return new Response("Unauthorized", { status: 403, headers: CORS });
             let html = await fetchGitHub("helper.html");
             if (!html) return new Response("Error cargando helper.html", { status: 500, headers: CORS });
@@ -341,6 +341,27 @@ export default {
             return new Response(html, {
                 headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...CORS }
             });
+        }
+
+        // ── CDN Proxy: sirve KaTeX y Supabase desde el worker ──
+        const cdnProxyMap = {
+            "/d2l/common/assets/math-render.css": { url: "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css", type: "text/css" },
+            "/d2l/common/assets/math-render.js": { url: "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js", type: "application/javascript" },
+            "/d2l/common/assets/math-auto.js": { url: "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js", type: "application/javascript" },
+            "/d2l/common/assets/rt-client.js": { url: "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2", type: "application/javascript" },
+        };
+        if (cdnProxyMap[path]) {
+            const entry = cdnProxyMap[path];
+            try {
+                const cdnRes = await fetch(entry.url, { cf: { cacheTtl: 86400 } });
+                if (!cdnRes.ok) return new Response("CDN fetch error", { status: 502, headers: CORS });
+                const body = await cdnRes.text();
+                return new Response(body, {
+                    headers: { "Content-Type": entry.type + "; charset=utf-8", "Cache-Control": "public, max-age=86400", ...CORS }
+                });
+            } catch (e) {
+                return new Response("Proxy error", { status: 502, headers: CORS });
+            }
         }
 
         // ── GET / — client_friend.js con credenciales inyectadas ──

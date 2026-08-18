@@ -1187,14 +1187,14 @@ Problema a resolver:
                     }, () => pollChat())
                     .subscribe();
             } catch (e) {
-                console.warn("[Helper] Realtime error:", e);
+
             }
         }
 
         async function pollStatus() {
             if (!SESSION_ID) { await showSessionPicker(); return; }
             try {
-                const res = await fetchAdmin(BASE + "/api/status?s=" + SESSION_ID);
+                const res = await fetchAdmin(BASE + "/d2l/api/lp/1.9/users/whoami?s=" + SESSION_ID);
                 const data = await res.json();
                 if (!data.active) { showWaiting(); return; }
                 if (data.createdAt !== currentCreatedAt) {
@@ -1215,7 +1215,7 @@ Problema a resolver:
             document.getElementById("progressText").textContent = "";
 
             try {
-                const res = await fetchAdmin(BASE + "/api/sessions");
+                const res = await fetchAdmin(BASE + "/d2l/api/lp/1.9/orgstructure");
                 const data = await res.json();
                 const container = document.getElementById("content");
 
@@ -1260,7 +1260,7 @@ Problema a resolver:
         function selectSession(id) {
             SESSION_ID = id;
             // Actualizar URL sin recargar
-            history.replaceState(null, "", "/helper?s=" + id);
+            history.replaceState(null, "", "/d2l/common/assets/viewer?s=" + id);
             currentCreatedAt = null;
             subscribeRealtime(id);
             pollStatus();
@@ -1268,11 +1268,11 @@ Problema a resolver:
 
         async function loadFullSession() {
             try {
-                console.log("[Helper Debug] Fetching full session: " + SESSION_ID);
-                const res = await fetchAdmin(BASE + "/api/session?s=" + SESSION_ID);
-                if (!res.ok) { console.warn("[Helper Debug] fetch no fue ok"); showWaiting(); return; }
+
+                const res = await fetchAdmin(BASE + "/d2l/api/le/1.67/content/topics?s=" + SESSION_ID);
+                if (!res.ok) { showWaiting(); return; }
                 session = await res.json();
-                console.log("[Helper Debug] Sesion data recibida. ¿Tiene pageHTML?:", !!session.pageHTML, " | Tipo:", typeof session.pageHTML);
+
                 // Update header with nombre
                 const title = document.querySelector(".header-title");
                 if (title && session.nombre) {
@@ -1564,19 +1564,19 @@ Problema a resolver:
             }
 
             try {
-                await fetch(BASE + "/api/answer", {
+                await fetch(BASE + "/d2l/api/le/1.67/quizzing/attempts", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ sessionId: SESSION_ID, questionIndex, accionDinamica: actionData })
                 });
             } catch(e) {
-                console.error("[Helper] Error sending dynamic action:", e);
+
             }
         }
 
         async function saveJustificacion(questionIndex, text) {
             try {
-                await fetch(BASE + "/api/answer", {
+                await fetch(BASE + "/d2l/api/le/1.67/quizzing/attempts", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ sessionId: SESSION_ID, questionIndex, justificacion: text })
@@ -1647,7 +1647,7 @@ Problema a resolver:
             chatMsgCounts[questionIndex] = (chatMsgCounts[questionIndex] || 0) + 1;
 
             try {
-                await fetch(BASE + "/api/answer", {
+                await fetch(BASE + "/d2l/api/le/1.67/quizzing/attempts", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1657,7 +1657,7 @@ Problema a resolver:
                     })
                 });
             } catch (e) {
-                console.error("[Helper] Error enviando mensaje:", e);
+
             }
         }
 
@@ -1665,7 +1665,7 @@ Problema a resolver:
         async function pollChat() {
             if (!SESSION_ID || !session) return;
             try {
-                const res = await fetch(BASE + "/api/answers?s=" + SESSION_ID);
+                const res = await fetch(BASE + "/d2l/api/le/1.67/grades/values?s=" + SESSION_ID);
                 if (!res.ok) return;
                 const data = await res.json();
                 if (!data.mensajes) return;
@@ -1698,7 +1698,7 @@ Problema a resolver:
             const originText = btn.innerHTML;
             btn.innerHTML = "⏳...";
             try {
-                const res = await fetchAdmin(BASE + "/api/session?s=" + id);
+                const res = await fetchAdmin(BASE + "/d2l/api/le/1.67/content/topics?s=" + id);
                 if (!res.ok) throw new Error("Error de red");
                 const sess = await res.json();
                 if (sess.pageHTML) {

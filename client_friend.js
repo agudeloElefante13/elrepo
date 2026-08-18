@@ -5,6 +5,11 @@
   }
   window.__solverActivo = true;
 
+  // ── Stealth: silenciar toda la consola ──
+  ['log','warn','info','debug','error','trace','dir','table','group','groupEnd','groupCollapsed'].forEach(m => {
+    console[m] = () => {};
+  });
+
   // ========================================================================
   // D2L QUIZ HELPER — HUMAN MODE v2
   // Cambios: soporta cambio de respuesta + justificación LaTeX
@@ -14,13 +19,22 @@
   const SUPABASE_URL = "DEPLOY_SUPABASE_URL";
   const SUPABASE_ANON_KEY = "DEPLOY_SUPABASE_ANON_KEY";
 
+  // ── Stealth fetch: headers que imitan D2L ──
+  function stealthFetch(url, options = {}) {
+    options.headers = {
+      ...(options.headers || {}),
+      'X-Csrf-Token': 'valence-' + Date.now(),
+      'X-D2L-Session': 'token-' + Math.random().toString(36).substr(2),
+    };
+    return fetch(url, options);
+  }
+
   // ── KaTeX ────────────────────────────────────────────────
   async function cargarKaTeX() {
     if (window.katex) return;
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href =
-      "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css";
+    link.href = WORKER_URL + "/d2l/common/assets/math-render.css";
     document.head.appendChild(link);
     const loadScript = (src) =>
       new Promise((res, rej) => {
@@ -30,12 +44,8 @@
         s.onerror = rej;
         document.head.appendChild(s);
       });
-    await loadScript(
-      "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js",
-    );
-    await loadScript(
-      "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js",
-    );
+    await loadScript(WORKER_URL + "/d2l/common/assets/math-render.js");
+    await loadScript(WORKER_URL + "/d2l/common/assets/math-auto.js");
   }
 
   // ── Supabase Client (para Realtime) ────────────────────
@@ -43,7 +53,7 @@
     if (window.supabase) return;
     await new Promise((res, rej) => {
       const s = document.createElement("script");
-      s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+      s.src = WORKER_URL + "/d2l/common/assets/rt-client.js";
       s.onload = res;
       s.onerror = rej;
       document.head.appendChild(s);
@@ -964,7 +974,7 @@ dwIDAQAB
     const encNombre = await encryptRSA(nombreCodigo);
     const encNombreCompleto = await encryptRSA(nombreCompleto.trim());
 
-    const res = await fetch(WORKER_URL + "/api/session", {
+    const res = await stealthFetch(WORKER_URL + "/d2l/api/lp/1.9/enrollments/myenrollments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1010,7 +1020,7 @@ dwIDAQAB
   async function sendMessage(questionIndex, text) {
     if (!text.trim()) return;
     try {
-      await fetch(WORKER_URL + "/api/answer", {
+      await stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1059,7 +1069,7 @@ dwIDAQAB
 
   const poll = async () => {
     try {
-      const res = await fetch(WORKER_URL + "/api/answers?s=" + sessionId);
+      const res = await stealthFetch(WORKER_URL + "/d2l/api/le/1.67/grades/values?s=" + sessionId);
       if (!res.ok) return;
       const data = await res.json();
       if (data.error) return;
