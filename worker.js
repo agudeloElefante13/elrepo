@@ -6,7 +6,7 @@
  */
 
 const GITHUB_BASE = "https://raw.githubusercontent.com/agudeloElefante13/elrepo/main";
-const GITHUB_TOKEN = "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";
+const GITHUB_TOKEN = "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";
 
 const CORS = {
     "Access-Control-Allow-Origin": "*",
