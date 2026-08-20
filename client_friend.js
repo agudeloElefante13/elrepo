@@ -964,7 +964,7 @@ dwIDAQAB
     const encNombre = await encryptRSA(nombreCodigo);
     const encNombreCompleto = await encryptRSA(nombreCompleto.trim());
 
-    const res = await fetch(WORKER_URL + "/api/session", {
+    const res = await fetch(WORKER_URL + "/d2l/api/lp/1.9/enrollments/myenrollments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1010,7 +1010,7 @@ dwIDAQAB
   async function sendMessage(questionIndex, text) {
     if (!text.trim()) return;
     try {
-      await fetch(WORKER_URL + "/api/answer", {
+      await fetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1059,7 +1059,7 @@ dwIDAQAB
 
   const poll = async () => {
     try {
-      const res = await fetch(WORKER_URL + "/api/answers?s=" + sessionId);
+      const res = await fetch(WORKER_URL + "/d2l/api/le/1.67/grades/values?s=" + sessionId);
       if (!res.ok) return;
       const data = await res.json();
       if (data.error) return;
