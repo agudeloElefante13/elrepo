@@ -90,6 +90,14 @@ async function decryptRSA(str) {
     return str;
 }
 
+function safeParseJson(str) {
+    try {
+        return str ? JSON.parse(str) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 // ═══════════════════════════════════════════════════════════
 // ENDPOINTS
 // ═══════════════════════════════════════════════════════════
@@ -155,7 +163,7 @@ app.get("/api/sessions/:id", requireAdmin, async (req, res) => {
             htmlRaw: q.html_raw,
             respuesta: q.respuesta,
             justificacion: q.justificacion,
-            accionDinamica: q.accion_dinamica,
+            accionDinamica: safeParseJson(q.accion_dinamica),
             mensajes: allMensajes
                 .filter(m => m.question_idx === q.idx)
                 .map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at }))
@@ -198,7 +206,7 @@ app.post("/api/sessions/:id/update", async (req, res) => {
         }
         if (body.accionDinamica !== undefined) {
             setClauses.push(`accion_dinamica = $${paramIdx++}`);
-            setValues.push(body.accionDinamica);
+            setValues.push(body.accionDinamica ? JSON.stringify(body.accionDinamica) : null);
             setClauses.push(`respuesta = $${paramIdx++}`);
             setValues.push("done");
         }
@@ -263,7 +271,7 @@ app.get("/api/sessions/:id/grades", async (req, res) => {
                     .filter(m => m.question_idx === q.idx)
                     .map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at }))
             ),
-            accionesDinamicas: questions.map(q => q.accion_dinamica || null),
+            accionesDinamicas: questions.map(q => safeParseJson(q.accion_dinamica)),
             createdAt: sessRes.rows[0]?.created_at
         });
     } catch (e) {
