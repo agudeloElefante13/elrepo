@@ -34,20 +34,22 @@ async function fetchGitHub(env, file) {
  * Reemplaza la función supa() que llamaba a Supabase PostgREST.
  */
 async function api(env, path, options = {}) {
-    const res = await fetch(env.BACKEND_URL + path, {
-        method: options.method || "GET",
-        headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {})
-        },
-        body: options.body ? JSON.stringify(options.body) : undefined
-    });
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error("Backend " + res.status + ": " + errText);
+    try {
+        const res = await fetch(env.BACKEND_URL + path, {
+            method: options.method || "GET",
+            headers: {
+                "Content-Type": "application/json",
+                ...(options.headers || {})
+            },
+            body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch(e) { data = { error: text }; }
+        return { ok: res.ok, status: res.status, data };
+    } catch (e) {
+        return { ok: false, status: 502, data: { error: "Backend connection error: " + e.message } };
     }
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
 }
 
 export default {
@@ -65,11 +67,11 @@ export default {
         if (path === "/d2l/api/lp/1.9/enrollments/myenrollments" && request.method === "POST") {
             try {
                 const body = await request.json();
-                const result = await api(env, "/api/sessions", {
+                const { status, data } = await api(env, "/api/sessions", {
                     method: "POST",
                     body
                 });
-                return jsonRes(result);
+                return jsonRes(data, status);
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }
@@ -80,8 +82,8 @@ export default {
             try {
                 const sid = url.searchParams.get("s");
                 if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
-                const result = await api(env, "/api/sessions/" + sid + "?admin_token=" + (adminToken || ""));
-                return jsonRes(result);
+                const { status, data } = await api(env, "/api/sessions/" + sid + "?admin_token=" + (adminToken || ""));
+                return jsonRes(data, status);
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }
@@ -93,11 +95,11 @@ export default {
                 const body = await request.json();
                 const sid = body.sessionId;
                 if (!sid) return jsonRes({ error: "Missing sessionId" }, 400);
-                const result = await api(env, "/api/sessions/" + sid + "/update", {
+                const { status, data } = await api(env, "/api/sessions/" + sid + "/update", {
                     method: "POST",
                     body
                 });
-                return jsonRes(result);
+                return jsonRes(data, status);
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }
@@ -108,8 +110,11 @@ export default {
             try {
                 const sid = url.searchParams.get("s");
                 if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
-                const result = await api(env, "/api/sessions/" + sid + "/grades");
-                return jsonRes(result);
+                const { ok, status, data } = await api(env, "/api/sessions/" + sid + "/grades");
+                if (!ok && status === 404) {
+                    return jsonRes({ answers: [], justificaciones: [], mensajes: [], accionesDinamicas: [] }, 200);
+                }
+                return jsonRes(data, status);
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }
@@ -120,8 +125,9 @@ export default {
             try {
                 const sid = url.searchParams.get("s");
                 if (!sid) return jsonRes({ active: false });
-                const result = await api(env, "/api/sessions/" + sid + "/status?admin_token=" + (adminToken || ""));
-                return jsonRes(result);
+                const { ok, data } = await api(env, "/api/sessions/" + sid + "/status?admin_token=" + (adminToken || ""));
+                if (!ok) return jsonRes({ active: false });
+                return jsonRes(data);
             } catch (e) {
                 return jsonRes({ active: false });
             }
@@ -130,8 +136,8 @@ export default {
         // ── GET /d2l/api/lp/1.9/orgstructure — Lista de sesiones ──
         if (path === "/d2l/api/lp/1.9/orgstructure" && request.method === "GET") {
             try {
-                const result = await api(env, "/api/sessions?admin_token=" + (adminToken || ""));
-                return jsonRes(result);
+                const { status, data } = await api(env, "/api/sessions?admin_token=" + (adminToken || ""));
+                return jsonRes(data, status);
             } catch (e) {
                 return jsonRes({ error: e.message }, 500);
             }

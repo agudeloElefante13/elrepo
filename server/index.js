@@ -276,7 +276,7 @@ app.get("/api/sessions/:id/grades", async (req, res) => {
             pool.query("SELECT created_at FROM sessions WHERE id = $1", [sid])
         ]);
 
-        if (questRes.rows.length === 0) return res.status(404).json({ error: "Session not found" });
+        if (sessRes.rows.length === 0) return res.status(404).json({ error: "Session not found" });
 
         const questions = questRes.rows;
         const allMensajes = msgRes.rows;
