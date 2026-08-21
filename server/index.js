@@ -53,7 +53,7 @@ function requireAdmin(req, res, next) {
 function generateId() {
     const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
     let id = "";
-    for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < 8; i++) id += chars[Math.floor(Math.random() * chars.length)];
     return id;
 }
 
@@ -107,16 +107,31 @@ function safeParseJson(str) {
 app.post("/api/sessions", async (req, res) => {
     try {
         const body = req.body;
-        const sessionId = generateId();
-        const nombre = (await decryptRSA(body.nombre)) || sessionId;
+        const nombre = (await decryptRSA(body.nombre)) || "anon";
         const nombreCompleto = await decryptRSA(body.nombreCompleto || "");
         const pageHTML = body.pageHTML || null;
 
-        await pool.query(
-            `INSERT INTO sessions (id, nombre, nombre_completo, page_html)
-             VALUES ($1, $2, $3, $4)`,
-            [sessionId, nombre, nombreCompleto, pageHTML]
-        );
+        let sessionId;
+        let inserted = false;
+        let attempts = 0;
+
+        while (!inserted && attempts < 5) {
+            attempts++;
+            sessionId = generateId();
+            try {
+                await pool.query(
+                    `INSERT INTO sessions (id, nombre, nombre_completo, page_html)
+                     VALUES ($1, $2, $3, $4)`,
+                    [sessionId, nombre, nombreCompleto, pageHTML]
+                );
+                inserted = true;
+            } catch (err) {
+                if (err.code === "23505" && attempts < 5) {
+                    continue;
+                }
+                throw err;
+            }
+        }
 
         // Insertar preguntas en batch
         const questions = body.questions || [];
@@ -189,10 +204,10 @@ app.post("/api/sessions/:id/update", async (req, res) => {
     try {
         const sid = req.params.id;
         const body = req.body;
-        const idx = body.questionIndex;
-        const promises = [];
+        const idx = parseInt(body.questionIndex);
+        if (isNaN(idx)) return res.status(400).json({ error: "Invalid questionIndex" });
 
-        // Actualizar campos de la pregunta
+        const promises = [];
         const setClauses = [];
         const setValues = [];
         let paramIdx = 1;
@@ -208,8 +223,10 @@ app.post("/api/sessions/:id/update", async (req, res) => {
         if (body.accionDinamica !== undefined) {
             setClauses.push(`accion_dinamica = $${paramIdx++}`);
             setValues.push(body.accionDinamica ? JSON.stringify(body.accionDinamica) : null);
-            setClauses.push(`respuesta = $${paramIdx++}`);
-            setValues.push("done");
+            if (body.letra === undefined) {
+                setClauses.push(`respuesta = $${paramIdx++}`);
+                setValues.push("done");
+            }
         }
 
         if (setClauses.length > 0) {
