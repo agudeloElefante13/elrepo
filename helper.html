@@ -1171,9 +1171,14 @@ Problema a resolver:
                     rtSocket.disconnect();
                 }
                 rtSocket = io(BACKEND_URL, { transports: ["websocket", "polling"] });
-                rtSocket.on("connect", () => {
-                    rtSocket.emit("join", sid);
-                });
+                const joinRoom = () => {
+                    if (sid) rtSocket.emit("join", sid);
+                };
+                if (rtSocket.connected) {
+                    joinRoom();
+                }
+                rtSocket.on("connect", joinRoom);
+                rtSocket.io?.on("reconnect", joinRoom);
                 rtSocket.on("update", () => { pollStatus(); pollChat(); });
             } catch (e) {
 

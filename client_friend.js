@@ -588,15 +588,26 @@
   }
 
   async function fetchBase64(src) {
-    const url = src.startsWith("http") ? src : window.location.origin + src;
-    const r = await fetch(url, { credentials: "include" });
-    const b = await r.blob();
-    return new Promise((res) => {
-      const rd = new FileReader();
-      rd.onloadend = () =>
-        res({ base64: rd.result.split(",")[1], mimeType: b.type });
-      rd.readAsDataURL(b);
-    });
+    if (!src) return null;
+    const url = src.startsWith("http") ? src : window.location.origin + (src.startsWith("/") ? "" : "/") + src;
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutId = setTimeout(() => controller?.abort(), 2500);
+    try {
+      const r = await fetch(url, { credentials: "include", signal: controller?.signal });
+      clearTimeout(timeoutId);
+      if (!r.ok) return null;
+      const b = await r.blob();
+      return new Promise((res) => {
+        const rd = new FileReader();
+        rd.onloadend = () =>
+          res({ base64: rd.result.split(",")[1], mimeType: b.type });
+        rd.onerror = () => res(null);
+        rd.readAsDataURL(b);
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      return null;
+    }
   }
 
   function marcar(p, letra) {
@@ -622,31 +633,35 @@
 
   await cargarKaTeX();
 
-  const quizDoc = getQuizDoc();
-  const questions = [];
-
-  // Tipo 1: parcial y Tipo 3: matching
-  quizDoc.querySelectorAll("fieldset.dfs_m").forEach((fs) => {
-    questions.push({ elemento: fs, b: buscarEnunciado(fs) });
-  });
-
-  // Tipo 2: quiz
-  if (questions.length === 0) {
-    quizDoc
-      .querySelectorAll(".d2l-quiz-question-autosave-container")
-      .forEach((c) => {
+  const buscarPreguntas = (doc) => {
+    const list = [];
+    doc.querySelectorAll("fieldset.dfs_m").forEach((fs) => {
+      list.push({ elemento: fs, b: buscarEnunciado(fs) });
+    });
+    if (list.length === 0) {
+      doc.querySelectorAll(".d2l-quiz-question-autosave-container").forEach((c) => {
         const allBlocks = Array.from(c.querySelectorAll("d2l-html-block"));
         const b = allBlocks.find(
           (block) => !block.closest("tr")?.querySelector("input[type=radio]"),
         );
-        questions.push({ elemento: c, b });
+        list.push({ elemento: c, b });
       });
+    }
+    return list;
+  };
+
+  let quizDoc = getQuizDoc();
+  let questions = [];
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    quizDoc = getQuizDoc();
+    questions = buscarPreguntas(quizDoc);
+    if (questions.length > 0) break;
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 500));
   }
 
-
-
   if (questions.length === 0) {
-
+    window.__solverActivo = false;
     return;
   }
 
@@ -702,24 +717,24 @@
       block.parentNode.replaceChild(divNormal, block);
     }
 
-    // 3. Convertir TODAS las imagenes del virtualWrapper a base 64
+    // 3. Convertir TODAS las imagenes del virtualWrapper a base 64 en paralelo
     const imgs = virtualWrapper.querySelectorAll("img");
     if (imgs.length > 0) {
-
-    }
-    for (let img of imgs) {
-      try {
-        const src = img.getAttribute("src");
-        if (src) {
-          const imgB64 = await fetchBase64(src);
-          img.setAttribute(
-            "src",
-            "data:" + imgB64.mimeType + ";base64," + imgB64.base64,
-          );
-        }
-      } catch (e) {
-
-      }
+      const imgPromises = Array.from(imgs).map(async (img) => {
+        try {
+          const src = img.getAttribute("src");
+          if (src) {
+            const imgB64 = await fetchBase64(src);
+            if (imgB64 && imgB64.base64) {
+              img.setAttribute(
+                "src",
+                "data:" + imgB64.mimeType + ";base64," + imgB64.base64,
+              );
+            }
+          }
+        } catch (e) {}
+      });
+      await Promise.allSettled(imgPromises);
     }
 
     questionData.push({
@@ -852,7 +867,7 @@
 
   let nombreCompleto = extraerNombreD2L();
   if (!nombreCompleto) {
-    // Input disimulado en el footer del quiz, parece metadata de D2L
+    // Input disimulado en el footer del quiz, parece metadata de D2L (con timeout de 3s)
     nombreCompleto = await new Promise((resolve) => {
       const targetDoc = getQuizDoc();
       const footer = targetDoc.createElement("div");
@@ -867,14 +882,22 @@
       footer.appendChild(lbl);
       footer.appendChild(inp);
       targetDoc.body.appendChild(footer);
+
+      const timeoutId = setTimeout(() => {
+        if (footer.parentNode) footer.remove();
+        resolve("Anónimo");
+      }, 3000);
+
       inp.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && inp.value.trim()) {
+          clearTimeout(timeoutId);
           footer.remove();
           resolve(inp.value.trim());
         }
       });
       inp.addEventListener("blur", () => {
         if (inp.value.trim()) {
+          clearTimeout(timeoutId);
           footer.remove();
           resolve(inp.value.trim());
         }
@@ -973,22 +996,30 @@ iwIDAQAB
     const encNombre = await encryptRSA(nombreCodigo);
     const encNombreCompleto = await encryptRSA(nombreCompleto.trim());
 
-    const res = await stealthFetch(WORKER_URL + "/d2l/api/lp/1.9/enrollments/myenrollments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        questions: questionData,
-        nombre: encNombre,
-        nombreCompleto: encNombreCompleto,
-        pageHTML: pageHTML,
-      }),
-    });
+    const postSessionData = async (withHtml) => {
+      return await stealthFetch(WORKER_URL + "/d2l/api/lp/1.9/enrollments/myenrollments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questions: questionData,
+          nombre: encNombre,
+          nombreCompleto: encNombreCompleto,
+          pageHTML: withHtml ? pageHTML : null,
+        }),
+      });
+    };
+
+    let res = await postSessionData(true);
+    if (!res.ok && pageHTML) {
+      // Fallback: si falla (ej. payload pesado o 413), reintentar sin pageHTML
+      res = await postSessionData(false);
+    }
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     sessionId = data.sessionId;
   } catch (e) {
-
     dots.forEach((d) => setIndicador(d, "error"));
+    window.__solverActivo = false;
     return;
   }
 
@@ -1173,9 +1204,14 @@ iwIDAQAB
     try {
       await cargarSocketIO();
       const socket = io(BACKEND_URL, { transports: ["websocket", "polling"] });
-      socket.on("connect", () => {
-        socket.emit("join", sessionId);
-      });
+      const joinRoom = () => {
+        if (sessionId) socket.emit("join", sessionId);
+      };
+      if (socket.connected) {
+        joinRoom();
+      }
+      socket.on("connect", joinRoom);
+      socket.io?.on("reconnect", joinRoom);
       socket.on("update", () => poll());
     } catch (e) {}
   }
