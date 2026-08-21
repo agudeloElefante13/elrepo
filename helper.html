@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <style>
         *,
         *::before,
@@ -1019,8 +1019,7 @@ Problema a resolver:
         let pollTimer = null;
         let chatMsgCounts = {};
         let chatPollTimer = null;
-        const SUPABASE_URL = "DEPLOY_SUPABASE_URL";
-        const SUPABASE_ANON_KEY = "DEPLOY_SUPABASE_ANON_KEY";
+        const BACKEND_URL = "DEPLOY_BACKEND_URL";
         const ADMIN_TOKEN = "DEPLOY_ADMIN_TOKEN";
         
         function fetchAdmin(url, options = {}) {
@@ -1028,8 +1027,7 @@ Problema a resolver:
             return fetch(url + sep + "admin_token=" + ADMIN_TOKEN, options);
         }
 
-        let supaClient = null;
-        let realtimeChannel = null;
+        let rtSocket = null;
 
         function playPing() {
             try {
@@ -1165,27 +1163,18 @@ Problema a resolver:
             });
         }
 
-        // ── Supabase Realtime — actualizaciones instantáneas ──
+        // ── Socket.io Realtime — actualizaciones instantáneas ──
         function subscribeRealtime(sid) {
-            if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL === "DEPLOY_SUPABASE_URL") return;
+            if (!BACKEND_URL || BACKEND_URL === "DEPLOY_BACKEND_URL") return;
             try {
-                if (!supaClient) {
-                    supaClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                if (rtSocket) {
+                    rtSocket.disconnect();
                 }
-                if (realtimeChannel) {
-                    supaClient.removeChannel(realtimeChannel);
-                }
-                realtimeChannel = supaClient
-                    .channel("helper-rt-" + sid)
-                    .on("postgres_changes", {
-                        event: "*", schema: "public", table: "questions",
-                        filter: "session_id=eq." + sid
-                    }, () => { pollStatus(); pollChat(); })
-                    .on("postgres_changes", {
-                        event: "INSERT", schema: "public", table: "mensajes",
-                        filter: "session_id=eq." + sid
-                    }, () => pollChat())
-                    .subscribe();
+                rtSocket = io(BACKEND_URL, { transports: ["websocket", "polling"] });
+                rtSocket.on("connect", () => {
+                    rtSocket.emit("join", sid);
+                });
+                rtSocket.on("update", () => { pollStatus(); pollChat(); });
             } catch (e) {
 
             }

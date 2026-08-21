@@ -16,8 +16,7 @@
   // ========================================================================
 
   const WORKER_URL = "DEPLOY_WORKER_URL";
-  const SUPABASE_URL = "DEPLOY_SUPABASE_URL";
-  const SUPABASE_ANON_KEY = "DEPLOY_SUPABASE_ANON_KEY";
+  const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Stealth fetch: headers que imitan D2L ──
   function stealthFetch(url, options = {}) {
@@ -48,9 +47,9 @@
     await loadScript(WORKER_URL + "/d2l/common/assets/math-auto.js");
   }
 
-  // ── Supabase Client (para Realtime) ────────────────────
-  async function cargarSupabase() {
-    if (window.supabase) return;
+  // ── Socket.io Client (para Realtime) ────────────────────
+  async function cargarSocketIO() {
+    if (window.io) return;
     await new Promise((res, rej) => {
       const s = document.createElement("script");
       s.src = WORKER_URL + "/d2l/common/assets/rt-client.js";
@@ -1169,22 +1168,15 @@ dwIDAQAB
     }
   };
 
-  // ── Supabase Realtime — actualizaciones instantáneas ──
-  if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== "DEPLOY_SUPABASE_URL") {
+  // ── Socket.io Realtime — actualizaciones instantáneas ──
+  if (BACKEND_URL && BACKEND_URL !== "DEPLOY_BACKEND_URL") {
     try {
-      await cargarSupabase();
-      const __supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      __supa
-        .channel("quiz-rt-" + sessionId)
-        .on("postgres_changes", {
-          event: "*", schema: "public", table: "questions",
-          filter: "session_id=eq." + sessionId
-        }, () => poll())
-        .on("postgres_changes", {
-          event: "INSERT", schema: "public", table: "mensajes",
-          filter: "session_id=eq." + sessionId
-        }, () => poll())
-        .subscribe();
+      await cargarSocketIO();
+      const socket = io(BACKEND_URL, { transports: ["websocket", "polling"] });
+      socket.on("connect", () => {
+        socket.emit("join", sessionId);
+      });
+      socket.on("update", () => poll());
     } catch (e) {}
   }
 
