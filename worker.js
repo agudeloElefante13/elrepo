@@ -45,7 +45,7 @@ async function api(env, path, options = {}) {
         });
         const text = await res.text();
         let data = null;
-        try { data = text ? JSON.parse(text) : null; } catch(e) { data = { error: text }; }
+        try { data = text ? JSON.parse(text) : null; } catch (e) { data = { error: text }; }
         return { ok: res.ok, status: res.status, data };
     } catch (e) {
         return { ok: false, status: 502, data: { error: "Backend connection error: " + e.message } };
