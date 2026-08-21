@@ -5,7 +5,6 @@
  */
 
 const GITHUB_BASE = "https://raw.githubusercontent.com/agudeloElefante13/elrepo/main";
-const GITHUB_TOKEN = "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";
 
 const CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -20,9 +19,10 @@ function jsonRes(data, status = 200) {
     });
 }
 
-async function fetchGitHub(file) {
+async function fetchGitHub(env, file) {
+    const token = env.GITHUB_TOKEN || "";
     const res = await fetch(GITHUB_BASE + "/" + file, {
-        headers: { "Authorization": "token " + GITHUB_TOKEN },
+        headers: { "Authorization": "token " + token },
         cache: "no-store"
     });
     if (!res.ok) return null;
@@ -141,7 +141,7 @@ export default {
         if (path === "/d2l/common/assets/viewer") {
             const isAdmin = env.ADMIN_TOKEN && adminToken === env.ADMIN_TOKEN;
             if (!isAdmin) return new Response("Unauthorized", { status: 403, headers: CORS });
-            let html = await fetchGitHub("helper.html");
+            let html = await fetchGitHub(env, "helper.html");
             if (!html) return new Response("Error cargando helper.html", { status: 500, headers: CORS });
             html = html.replace('"DEPLOY_BACKEND_URL"', '"' + (env.BACKEND_URL || '') + '"');
             html = html.replace('"DEPLOY_ADMIN_TOKEN"', '"' + (env.ADMIN_TOKEN || '') + '"');
@@ -172,7 +172,7 @@ export default {
         }
 
         // ── GET / — client_friend.js con credenciales inyectadas ──
-        const script = await fetchGitHub("client_friend.js");
+        const script = await fetchGitHub(env, "client_friend.js");
         if (!script) return new Response("Error cargando client_friend.js", { status: 500, headers: CORS });
         let processed = script.replace('"DEPLOY_WORKER_URL"', '"' + url.origin + '"');
         processed = processed.replace('"DEPLOY_BACKEND_URL"', '"' + (env.BACKEND_URL || '') + '"');
