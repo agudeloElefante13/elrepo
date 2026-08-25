@@ -76,11 +76,12 @@
     }
 
     // 4. Notificar al worker para setear cookie con Max-Age de 10s (best-effort)
-    if (notificarWorker && WORKER_URL && WORKER_URL !== "DEPLOY_WORKER_URL") {
+    if (notificarWorker && WORKER_URL) {
       fetch(WORKER_URL + "/api/pausar", {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, duration: PAUSE_DURATION_SEC })
       }).catch(() => {});
     }
 

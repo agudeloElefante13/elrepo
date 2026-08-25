@@ -894,6 +894,96 @@
             font-size: 13px;
             padding: 40px 20px;
         }
+
+        /* ── Timeout Alert Banner ── */
+        .timeout-banner {
+            position: sticky;
+            top: 54px;
+            z-index: 99;
+            margin: 12px 20px 0;
+            padding: 12px 16px;
+            border-radius: 14px;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2);
+            animation: card-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow: hidden;
+        }
+
+        .timeout-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .timeout-icon {
+            font-size: 26px;
+            animation: badge-pulse 1.2s ease-in-out infinite;
+        }
+
+        .timeout-info {
+            flex: 1;
+        }
+
+        .timeout-title {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #f87171;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .timeout-subtitle {
+            font-size: 11.5px;
+            color: #fca5a5;
+            opacity: 0.9;
+            margin-top: 2px;
+        }
+
+        .timeout-timer-box {
+            text-align: right;
+            background: rgba(239, 68, 68, 0.22);
+            padding: 6px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(239, 68, 68, 0.35);
+        }
+
+        .timeout-count {
+            font-size: 19px;
+            font-weight: 800;
+            font-family: monospace, monospace;
+            color: #ffffff;
+            line-height: 1;
+        }
+
+        .timeout-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            color: #fca5a5;
+            margin-top: 3px;
+            letter-spacing: 0.05em;
+        }
+
+        .timeout-progress-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(239, 68, 68, 0.2);
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .timeout-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ef4444, #f87171);
+            width: 100%;
+            transition: width 0.1s linear;
+        }
     </style>
 </head>
 
@@ -910,6 +1000,24 @@
             <div class="progress-fill" id="progressFill"></div>
         </div>
         <div class="progress-text" id="progressText"></div>
+    </div>
+
+    <!-- ── Timeout Alert Banner ── -->
+    <div id="timeoutBanner" class="timeout-banner" style="display: none;">
+        <div class="timeout-content">
+            <div class="timeout-icon">⏸️</div>
+            <div class="timeout-info">
+                <div class="timeout-title">TIMEOUT ACTIVO</div>
+                <div class="timeout-subtitle">El cliente ocultó la pantalla por movimiento rápido del mouse</div>
+            </div>
+            <div class="timeout-timer-box">
+                <div class="timeout-count" id="timeoutCountdown">10s</div>
+                <div class="timeout-label">Reanudando</div>
+            </div>
+        </div>
+        <div class="timeout-progress-bar">
+            <div class="timeout-progress-fill" id="timeoutProgressFill"></div>
+        </div>
     </div>
     <div class="main" id="content">
         <div class="waiting" id="waitingState">
@@ -1011,7 +1119,17 @@ Problema a resolver:
     </div>
 
     <script>
-        const BASE = window.location.origin;
+        const DEPLOY_BACKEND_URL_RAW = "DEPLOY_BACKEND_URL";
+        const DEPLOY_ADMIN_TOKEN_RAW = "DEPLOY_ADMIN_TOKEN";
+
+        const BACKEND_URL = (DEPLOY_BACKEND_URL_RAW && DEPLOY_BACKEND_URL_RAW !== "DEPLOY_BACKEND_URL")
+            ? DEPLOY_BACKEND_URL_RAW
+            : (window.location.origin.startsWith("http") ? window.location.origin : "http://localhost:3001");
+        const BASE = (window.location.origin.startsWith("http") ? window.location.origin : BACKEND_URL);
+        const ADMIN_TOKEN = (DEPLOY_ADMIN_TOKEN_RAW && DEPLOY_ADMIN_TOKEN_RAW !== "DEPLOY_ADMIN_TOKEN")
+            ? DEPLOY_ADMIN_TOKEN_RAW
+            : (new URLSearchParams(window.location.search).get("admin_token") || "");
+
         let SESSION_ID = new URLSearchParams(window.location.search).get("s");
         let currentCreatedAt = null;
         let session = null;
@@ -1019,12 +1137,11 @@ Problema a resolver:
         let pollTimer = null;
         let chatMsgCounts = {};
         let chatPollTimer = null;
-        const BACKEND_URL = "DEPLOY_BACKEND_URL";
-        const ADMIN_TOKEN = "DEPLOY_ADMIN_TOKEN";
         
         function fetchAdmin(url, options = {}) {
             const sep = url.includes("?") ? "&" : "?";
-            return fetch(url + sep + "admin_token=" + ADMIN_TOKEN, options);
+            const token = ADMIN_TOKEN || new URLSearchParams(window.location.search).get("admin_token") || "";
+            return fetch(url + sep + "admin_token=" + token, options);
         }
 
         let rtSocket = null;
@@ -1163,9 +1280,54 @@ Problema a resolver:
             });
         }
 
+        // ── Timeout Alert con Cuenta Regresiva Sincronizada ──
+        let timeoutInterval = null;
+
+        function showTimeoutAlert(duration = 10, untilTimestamp = null) {
+            const banner = document.getElementById("timeoutBanner");
+            const countdownEl = document.getElementById("timeoutCountdown");
+            const progressFill = document.getElementById("timeoutProgressFill");
+            if (!banner || !countdownEl || !progressFill) return;
+
+            banner.style.display = "block";
+            playPing();
+
+            const endTime = untilTimestamp || (Date.now() + duration * 1000);
+            const totalDurationMs = duration * 1000;
+
+            if (timeoutInterval) clearInterval(timeoutInterval);
+
+            const updateTimer = () => {
+                const remainingMs = Math.max(0, endTime - Date.now());
+                const remainingSec = Math.ceil(remainingMs / 1000);
+
+                countdownEl.textContent = remainingSec + "s";
+                const pct = Math.max(0, Math.min(100, (remainingMs / totalDurationMs) * 100));
+                progressFill.style.width = pct + "%";
+
+                if (remainingMs <= 0) {
+                    clearInterval(timeoutInterval);
+                    timeoutInterval = null;
+                    countdownEl.textContent = "0s";
+                    progressFill.style.width = "0%";
+                    setTimeout(() => {
+                        banner.style.display = "none";
+                        pollStatus();
+                    }, 800);
+                }
+            };
+
+            updateTimer();
+            timeoutInterval = setInterval(updateTimer, 100);
+        }
+
+        // ── Socket.io Realtime — actualizaciones instantáneas ──
+        // Exponer función de prueba manual para verificar el banner en consola
+        window.__testTimeoutBanner = showTimeoutAlert;
+
         // ── Socket.io Realtime — actualizaciones instantáneas ──
         function subscribeRealtime(sid) {
-            if (!BACKEND_URL || BACKEND_URL === "DEPLOY_BACKEND_URL") return;
+            if (!BACKEND_URL) return;
             try {
                 if (rtSocket) {
                     rtSocket.disconnect();
@@ -1179,7 +1341,20 @@ Problema a resolver:
                 }
                 rtSocket.on("connect", joinRoom);
                 rtSocket.io?.on("reconnect", joinRoom);
-                rtSocket.on("update", () => { pollStatus(); pollChat(); });
+                rtSocket.on("timeout", (data) => {
+                    showTimeoutAlert(data?.duration || 10, data?.until);
+                });
+                rtSocket.on("pause", (data) => {
+                    showTimeoutAlert(data?.duration || 10, data?.until);
+                });
+                rtSocket.on("update", (data) => {
+                    if (data && (data.type === "timeout" || data.type === "pause")) {
+                        showTimeoutAlert(data?.duration || 10, data?.until);
+                    } else {
+                        pollStatus();
+                        pollChat();
+                    }
+                });
             } catch (e) {
 
             }
@@ -1189,6 +1364,10 @@ Problema a resolver:
             if (!SESSION_ID) { await showSessionPicker(); return; }
             try {
                 const res = await fetchAdmin(BASE + "/d2l/api/lp/1.9/users/whoami?s=" + SESSION_ID);
+                if (res.status === 423) {
+                    showTimeoutAlert(10);
+                    return;
+                }
                 const data = await res.json();
                 if (!data.active) { showWaiting(); return; }
                 if (data.createdAt !== currentCreatedAt) {
@@ -1716,7 +1895,7 @@ Problema a resolver:
         }
 
         pollStatus();
-        if (SESSION_ID) subscribeRealtime(SESSION_ID);
+        subscribeRealtime(SESSION_ID);
         setInterval(pollStatus, 10000);
         setInterval(pollChat, 10000);
     </script>

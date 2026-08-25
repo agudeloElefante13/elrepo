@@ -75,6 +75,15 @@ export default {
 
         // ── Endpoint /api/pausar o /d2l/api/pausar — Settea cookie de pausa por 10s ──
         if ((path === "/api/pausar" || path === "/d2l/api/pausar") && (request.method === "POST" || request.method === "GET")) {
+            try {
+                let body = {};
+                if (request.method === "POST") {
+                    try { body = await request.json(); } catch(e) {}
+                }
+                // Notificar al backend VPS para que emita evento Socket.io
+                await api(env, "/api/pausar", { method: "POST", body });
+            } catch(e) {}
+
             return new Response(JSON.stringify({ ok: true, paused: true, maxAge: 10 }), {
                 status: 200,
                 headers: {
