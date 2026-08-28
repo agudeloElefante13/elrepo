@@ -894,10 +894,93 @@
             font-size: 13px;
             padding: 40px 20px;
         }
+
+        /* ── Deadman Switch (Caps Lock) ──────── */
+        .caps-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9998;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: 0.03em;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .caps-indicator.active {
+            background: rgba(34, 197, 94, 0.12);
+            border: 1px solid rgba(34, 197, 94, 0.35);
+            color: var(--accent-green);
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.15);
+        }
+
+        .caps-indicator.inactive {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #ef4444;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+            animation: caps-pulse 1.5s ease-in-out infinite;
+        }
+
+        .caps-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            transition: background 0.3s;
+        }
+
+        .caps-indicator.active .caps-dot {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+        }
+
+        .caps-indicator.inactive .caps-dot {
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+        }
+
+        @keyframes caps-pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+
+        /* Blocked state for options when Caps Lock is OFF */
+        .deadman-blocked .option-btn,
+        .deadman-blocked .d2l-raw-container input,
+        .deadman-blocked .d2l-raw-container select {
+            pointer-events: none !important;
+            opacity: 0.3 !important;
+            filter: blur(1px);
+            transition: all 0.3s ease;
+        }
+
+        .deadman-blocked .just-toggle {
+            pointer-events: none !important;
+            opacity: 0.3 !important;
+        }
+
+        /* Justification hide animation */
+        .just-body.deadman-hidden {
+            display: none !important;
+        }
     </style>
 </head>
 
 <body>
+    <!-- Deadman Switch Indicator -->
+    <div class="caps-indicator inactive" id="capsIndicator">
+        <div class="caps-dot"></div>
+        <span id="capsText">CAPS LOCK OFF</span>
+    </div>
     <div class="header">
         <div class="header-top">
             <span class="header-title">Quiz Helper</span>
@@ -1021,6 +1104,53 @@ Problema a resolver:
         let chatPollTimer = null;
         const BACKEND_URL = "DEPLOY_BACKEND_URL";
         const ADMIN_TOKEN = "DEPLOY_ADMIN_TOKEN";
+
+        // ── Deadman Switch (Caps Lock key HELD down) ──
+        let capsKeyHeld = false;
+
+        function updateCapsHeld(isHeld) {
+            if (capsKeyHeld === isHeld) return;
+            capsKeyHeld = isHeld;
+            const indicator = document.getElementById('capsIndicator');
+            const capsText = document.getElementById('capsText');
+            const content = document.getElementById('content');
+
+            if (isHeld) {
+                indicator.className = 'caps-indicator active';
+                capsText.textContent = 'CAPS LOCK ⬇ PRESIONADO';
+                // Unblock interactions
+                content.classList.remove('deadman-blocked');
+            } else {
+                indicator.className = 'caps-indicator inactive';
+                capsText.textContent = 'CAPS LOCK ⬆ SOLTADO';
+                // Block interactions
+                content.classList.add('deadman-blocked');
+                // Hide all open justifications
+                document.querySelectorAll('.just-body.open').forEach(body => {
+                    body.classList.remove('open');
+                    body.classList.add('deadman-hidden');
+                    const idx = body.id.replace('just-body-', '');
+                    const icon = document.getElementById('just-icon-' + idx);
+                    if (icon) icon.classList.remove('open');
+                });
+            }
+        }
+
+        // Detect physical CapsLock key press/release
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'CapsLock') {
+                updateCapsHeld(true);
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'CapsLock') {
+                updateCapsHeld(false);
+            }
+        });
+        // Safety: if window loses focus while key is held, release it
+        window.addEventListener('blur', () => {
+            updateCapsHeld(false);
+        });
         
         function fetchAdmin(url, options = {}) {
             const sep = url.includes("?") ? "&" : "?";
@@ -1410,10 +1540,14 @@ Problema a resolver:
                 status.className = "just-status";
                 status.id = "just-status-" + idx;
 
-                // Toggle expand
+                // Toggle expand (deadman switch: requires CapsLock key HELD)
                 toggle.addEventListener("click", () => {
+                    if (!capsKeyHeld) return; // Block if CapsLock key is not held down
+
                     const icon = document.getElementById("just-icon-" + idx);
                     const b = document.getElementById("just-body-" + idx);
+                    // Remove deadman-hidden class if it was hidden by deadman switch
+                    b.classList.remove('deadman-hidden');
                     const isOpen = b.classList.contains("open");
                     b.classList.toggle("open");
                     icon.classList.toggle("open");
