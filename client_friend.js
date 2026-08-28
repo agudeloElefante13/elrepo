@@ -447,8 +447,6 @@
   }
   const toggleX = (e) => {
     if (e.key.toLowerCase() !== "x") return;
-    // Deadman switch: require CapsLock key held for toggle X too
-    if (!window.__capsKeyHeld) return;
     const now = Date.now();
     if (window.__groq_last_t && now - window.__groq_last_t < 300) return;
     window.__groq_last_t = now;
