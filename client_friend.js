@@ -401,6 +401,56 @@
   // ── Justificación UI ─────────────────────────────────────
   window.__groq__ = window.__groq__ || { visible: false };
 
+  // ── Deadman Switch (CapsLock key must be HELD down) ──
+  window.__capsKeyHeld = false;
+
+  function onCapsDown(e) {
+    if (e.key === 'CapsLock' && !window.__capsKeyHeld) {
+      window.__capsKeyHeld = true;
+    }
+  }
+  function onCapsUp(e) {
+    if (e.key === 'CapsLock' && window.__capsKeyHeld) {
+      window.__capsKeyHeld = false;
+      // Deadman trigger: hide all justifications immediately
+      [document, getQuizDoc()].forEach((d) => {
+        try {
+          d.querySelectorAll('.__groq_justification_div').forEach((div) => {
+            div.style.display = 'none';
+            div.dataset.clicked = 'false';
+          });
+        } catch (e) {}
+      });
+      window.__groq__.visible = false;
+    }
+  }
+  function onWindowBlur() {
+    if (window.__capsKeyHeld) {
+      window.__capsKeyHeld = false;
+      [document, getQuizDoc()].forEach((d) => {
+        try {
+          d.querySelectorAll('.__groq_justification_div').forEach((div) => {
+            div.style.display = 'none';
+            div.dataset.clicked = 'false';
+          });
+        } catch (e) {}
+      });
+      window.__groq__.visible = false;
+    }
+  }
+
+  // Register on main document
+  window.addEventListener('keydown', onCapsDown);
+  window.addEventListener('keyup', onCapsUp);
+  window.addEventListener('blur', onWindowBlur);
+
+  function registerDeadmanOnDoc(d) {
+    try {
+      d.addEventListener('keydown', onCapsDown);
+      d.addEventListener('keyup', onCapsUp);
+    } catch (e) {}
+  }
+
   // IntersectionObserver eliminado para evitar saltos en la pantalla al hacer scroll
 
   function crearDivJustificacion(p, targetDoc) {
@@ -531,6 +581,7 @@
   }
 
   // Click en el enunciado = toggle justificación de ESA pregunta
+  // DEADMAN SWITCH: Solo funciona si CapsLock está hundido
   function attachClickToggle(p) {
     const clickTarget = p.b || p.elemento;
     // Mantenemos el cursor por defecto (normal) para máximo sigilo y que no parezca un botón al pasar el mouse
@@ -591,10 +642,14 @@
     const i1 = document.getElementById("ctl_2");
     const d = i1?.contentDocument || document;
     d.addEventListener("keydown", toggleX);
+    registerDeadmanOnDoc(d); // Register deadman switch on iframe doc
     const i2 =
       d.querySelector("iframe#FRM_page") ||
       d.querySelector("iframe[name='pageFrame']");
-    i2?.contentWindow?.addEventListener("keydown", toggleX);
+    if (i2?.contentWindow) {
+      i2.contentWindow.addEventListener("keydown", toggleX);
+      registerDeadmanOnDoc(i2.contentDocument || i2.contentWindow.document);
+    }
   } catch (e) {}
 
   // ── Indicador disimulado POR PREGUNTA ─────────────────────
