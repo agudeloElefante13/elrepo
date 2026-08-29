@@ -49,15 +49,6 @@
           `;
           d.head ? d.head.appendChild(style) : d.documentElement.appendChild(style);
         }
-        d.querySelectorAll(".__groq_just_div__, .__groq_justification_div").forEach((div) => {
-          div.style.display = "none";
-        });
-        d.querySelectorAll(".__helper_dot__").forEach((dot) => {
-          dot.style.display = "none";
-        });
-        d.querySelectorAll(".__groq_chat_msgs, .__groq_chat_input").forEach((el) => {
-          if (el.parentElement) el.parentElement.style.display = "none";
-        });
       } catch (e) {}
     });
   }
@@ -499,58 +490,6 @@
   // ── Justificación UI ─────────────────────────────────────
   window.__groq__ = window.__groq__ || { visible: false };
 
-  // ── Deadman Switch (CapsLock key must be HELD down) ──
-  window.__capsKeyHeld = false;
-
-  function onCapsDown(e) {
-    if (e.key === 'CapsLock' && !window.__capsKeyHeld) {
-      window.__capsKeyHeld = true;
-    }
-  }
-  function onCapsUp(e) {
-    if (e.key === 'CapsLock' && window.__capsKeyHeld) {
-      window.__capsKeyHeld = false;
-      // Deadman trigger: hide all justifications immediately
-      [document, getQuizDoc()].forEach((d) => {
-        try {
-          d.querySelectorAll('.__groq_justification_div').forEach((div) => {
-            div.style.display = 'none';
-            div.dataset.clicked = 'false';
-          });
-        } catch (e) {}
-      });
-      window.__groq__.visible = false;
-    }
-  }
-  function onWindowBlur() {
-    if (window.__capsKeyHeld) {
-      window.__capsKeyHeld = false;
-      [document, getQuizDoc()].forEach((d) => {
-        try {
-          d.querySelectorAll('.__groq_justification_div').forEach((div) => {
-            div.style.display = 'none';
-            div.dataset.clicked = 'false';
-          });
-        } catch (e) {}
-      });
-      window.__groq__.visible = false;
-    }
-  }
-
-  // Register on main document
-  window.addEventListener('keydown', onCapsDown);
-  window.addEventListener('keyup', onCapsUp);
-  window.addEventListener('blur', onWindowBlur);
-
-  function registerDeadmanOnDoc(d) {
-    try {
-      d.addEventListener('keydown', onCapsDown);
-      d.addEventListener('keyup', onCapsUp);
-    } catch (e) {}
-  }
-
-  // IntersectionObserver eliminado para evitar saltos en la pantalla al hacer scroll
-
   function crearDivJustificacion(p, targetDoc) {
     if (!targetDoc.getElementById("__groq_stealth_style")) {
       const style = targetDoc.createElement("style");
@@ -700,7 +639,7 @@
 
   function actualizarVisibilidad() {
     if (isWorkerPaused) return;
-    [document, getQuizDoc()].forEach((d) => {
+    getAllNestedDocuments().forEach((d) => {
       try {
         d.querySelectorAll(".__groq_justification_div").forEach((div) => {
           if (window.__groq__.visible) {
