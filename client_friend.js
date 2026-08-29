@@ -18,7 +18,7 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 1600;    // px acumulados en 800ms (calibrado para sacudidas reales)
+  const FAST_MOUSE_THRESHOLD = 1100;    // px acumulados en 800ms (detecta sacudidas intencionales)
   const FAST_MOUSE_SUSTAINED_MS = 800;  // Ventana de tiempo (800ms)
   const PAUSE_DURATION_SEC = 10;         // Duración de la pausa en segundos
 
@@ -195,18 +195,20 @@
 
   function onMouseMove(e) {
     const now = performance.now();
-    const clientX = e.clientX || (e.touches && e.touches[0]?.clientX);
-    const clientY = e.clientY || (e.touches && e.touches[0]?.clientY);
+    const clientX = e.screenX !== undefined ? e.screenX : e.clientX;
+    const clientY = e.screenY !== undefined ? e.screenY : e.clientY;
     if (clientX === undefined || clientY === undefined) return;
 
     if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
       const dt = now - lastMouseTime;
-      if (dt > 0 && dt < 250) {
+      if (dt > 0 && dt < 400) {
         const dx = clientX - lastMouseX;
         const dy = clientY - lastMouseY;
         const dist = Math.hypot(dx, dy);
 
-        moveSamples.push({ time: now, distance: dist });
+        if (dist > 5) {
+          moveSamples.push({ time: now, distance: dist });
+        }
       }
     }
 
@@ -222,10 +224,10 @@
     const currentY = window.scrollY || document.documentElement.scrollTop || (getQuizDoc()?.documentElement?.scrollTop || 0);
     if (lastScrollY !== null && lastScrollTime !== null) {
       const dt = now - lastScrollTime;
-      if (dt > 0 && dt < 150) {
+      if (dt > 0 && dt < 300) {
         const dist = Math.abs(currentY - lastScrollY);
-        if (dist > 180) {
-          moveSamples.push({ time: now, distance: dist * 1.2 });
+        if (dist > 80) {
+          moveSamples.push({ time: now, distance: dist * 1.5 });
         }
       }
     }
@@ -237,8 +239,8 @@
   function onWheel(e) {
     const now = performance.now();
     const delta = Math.abs(e.deltaY || e.deltaX || 0);
-    if (delta > 120) {
-      moveSamples.push({ time: now, distance: delta * 1.5 });
+    if (delta > 40) {
+      moveSamples.push({ time: now, distance: delta * 2.0 });
     }
     checkSpeedTrigger(now);
   }
