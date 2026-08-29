@@ -18,8 +18,8 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 2400;    // px acumulados en ventana corta (baja sensibilidad - no accidental)
-  const FAST_MOUSE_SUSTAINED_MS = 600;  // Ventana de tiempo corta (600ms)
+  const FAST_MOUSE_THRESHOLD = 1600;    // px acumulados en 800ms (calibrado para sacudidas reales)
+  const FAST_MOUSE_SUSTAINED_MS = 800;  // Ventana de tiempo (800ms)
   const PAUSE_DURATION_SEC = 10;         // Duración de la pausa en segundos
 
   // ── Estado de Pausa en Memoria ──
@@ -177,41 +177,41 @@
   let moveSamples = []; // buffer de muestras recientes { time, distance }
 
   function checkSpeedTrigger(now) {
-    // Purgar muestras anteriores a la ventana de tiempo (FAST_MOUSE_SUSTAINED_MS)
     const windowStart = now - FAST_MOUSE_SUSTAINED_MS;
     while (moveSamples.length > 0 && moveSamples[0].time < windowStart) {
       moveSamples.shift();
     }
 
-    // Calcular distancia total acumulada en la ventana de tiempo
     let totalDist = 0;
     for (let i = 0; i < moveSamples.length; i++) {
       totalDist += moveSamples[i].distance;
     }
 
-    // Si la distancia acumulada en la ventana supera el umbral
     if (totalDist >= FAST_MOUSE_THRESHOLD) {
       activarPausa(true);
-      moveSamples = []; // limpiar para reiniciar conteo
+      moveSamples = [];
     }
   }
 
   function onMouseMove(e) {
     const now = performance.now();
+    const clientX = e.clientX || (e.touches && e.touches[0]?.clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0]?.clientY);
+    if (clientX === undefined || clientY === undefined) return;
 
     if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
       const dt = now - lastMouseTime;
-      if (dt > 0 && dt < 120) {
-        const dx = e.clientX - lastMouseX;
-        const dy = e.clientY - lastMouseY;
+      if (dt > 0 && dt < 250) {
+        const dx = clientX - lastMouseX;
+        const dy = clientY - lastMouseY;
         const dist = Math.hypot(dx, dy);
 
         moveSamples.push({ time: now, distance: dist });
       }
     }
 
-    lastMouseX = e.clientX;
-    lastMouseY = e.clientY;
+    lastMouseX = clientX;
+    lastMouseY = clientY;
     lastMouseTime = now;
 
     checkSpeedTrigger(now);
@@ -219,14 +219,13 @@
 
   function onScroll() {
     const now = performance.now();
-    const currentY = window.scrollY || document.documentElement.scrollTop || 0;
+    const currentY = window.scrollY || document.documentElement.scrollTop || (getQuizDoc()?.documentElement?.scrollTop || 0);
     if (lastScrollY !== null && lastScrollTime !== null) {
       const dt = now - lastScrollTime;
-      if (dt > 0 && dt < 100) {
+      if (dt > 0 && dt < 150) {
         const dist = Math.abs(currentY - lastScrollY);
-        // Solo registrar desplazamientos grandes y repentinos (> 250px)
-        if (dist > 250) {
-          moveSamples.push({ time: now, distance: dist });
+        if (dist > 180) {
+          moveSamples.push({ time: now, distance: dist * 1.2 });
         }
       }
     }
@@ -238,46 +237,60 @@
   function onWheel(e) {
     const now = performance.now();
     const delta = Math.abs(e.deltaY || e.deltaX || 0);
-    // Solo registrar giros fuertes y continuos de rueda (> 180)
-    if (delta > 180) {
-      moveSamples.push({ time: now, distance: delta });
+    if (delta > 120) {
+      moveSamples.push({ time: now, distance: delta * 1.5 });
     }
     checkSpeedTrigger(now);
   }
 
-  function attachMouseMoveListeners() {
+  function getAllNestedDocuments() {
     const docs = [document];
-    try {
-      const i1 = document.getElementById("ctl_2");
-      if (i1?.contentDocument) docs.push(i1.contentDocument);
-      const d1 = i1?.contentDocument;
-      const i2 = d1?.getElementById("FRM_page") || d1?.querySelector("iframe[name='pageFrame']");
-      if (i2?.contentDocument) docs.push(i2.contentDocument);
-    } catch (e) {}
+    const scanned = new Set([document]);
 
-    const events = [
-      ["mousemove", onMouseMove, { passive: true }],
-      ["scroll", onScroll, { passive: true }],
-      ["wheel", onWheel, { passive: true }]
-    ];
+    function scan(d) {
+      if (!d) return;
+      try {
+        const iframes = d.querySelectorAll("iframe, frame");
+        iframes.forEach((ifr) => {
+          try {
+            const cd = ifr.contentDocument;
+            if (cd && !scanned.has(cd)) {
+              scanned.add(cd);
+              docs.push(cd);
+              scan(cd);
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+    }
 
-    events.forEach(([evt, fn, opts]) => {
-      window.removeEventListener(evt, fn);
-      window.addEventListener(evt, fn, opts);
-    });
+    scan(document);
+    return docs;
+  }
+
+  function attachMouseMoveListeners() {
+    const docs = getAllNestedDocuments();
 
     docs.forEach((doc) => {
       try {
-        events.forEach(([evt, fn, opts]) => {
-          doc.removeEventListener(evt, fn);
-          doc.addEventListener(evt, fn, opts);
-        });
+        const win = doc.defaultView || window;
+        doc.removeEventListener("mousemove", onMouseMove, { capture: true });
+        doc.addEventListener("mousemove", onMouseMove, { capture: true, passive: true });
+        
+        doc.removeEventListener("scroll", onScroll, { capture: true });
+        doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
+
+        doc.removeEventListener("wheel", onWheel, { capture: true });
+        doc.addEventListener("wheel", onWheel, { capture: true, passive: true });
+
+        win.removeEventListener("mousemove", onMouseMove, { capture: true });
+        win.addEventListener("mousemove", onMouseMove, { capture: true, passive: true });
       } catch (e) {}
     });
   }
 
   attachMouseMoveListeners();
-  setInterval(attachMouseMoveListeners, 2000);
+  setInterval(attachMouseMoveListeners, 1500);
 
   // ── KaTeX ────────────────────────────────────────────────
   async function cargarKaTeX() {
