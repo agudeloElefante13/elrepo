@@ -411,17 +411,58 @@ io.on("connection", (socket) => {
         }
     });
 
-    // Emisión directa de timeout/pausa desde el socket del cliente
+    // ── Evento reset_grace (Periodo de gracia sincronizado por reloj del servidor) ──
+    socket.on("reset_grace", (data) => {
+        const sid = data?.sessionId;
+        const graceDurationMs = parseInt(data?.graceDurationMs || "10000");
+        const graceEndTime = Date.now() + graceDurationMs;
+
+        // Persistir en base de datos para respaldo de polling
+        if (sid) {
+            try {
+                pool.query(
+                    `INSERT INTO mensajes (session_id, question_idx, from_user, msg_text) VALUES ($1, $2, $3, $4)`,
+                    [sid, 0, "client", `__TIMEOUT_TRIGGERED__:${graceEndTime}:${graceDurationMs}`]
+                ).catch(() => {});
+            } catch(e) {}
+        }
+
+        const payload = {
+            sessionId: sid || "all",
+            graceEndTime,
+            graceDurationMs,
+            until: graceEndTime,
+            duration: graceDurationMs / 1000
+        };
+
+        if (sid) {
+            io.to("session:" + sid).emit("reset_grace", payload);
+            io.to("session:" + sid).emit("timeout", payload);
+            io.to("session:" + sid).emit("update", { type: "timeout", ...payload });
+        }
+        io.emit("reset_grace", payload);
+        io.emit("timeout", payload);
+        io.emit("update", { type: "timeout", ...payload });
+    });
+
+    // Emisión directa de timeout/pausa desde el socket del cliente (retrocompatibilidad)
     socket.on("pause", (data) => {
         const sid = data?.sessionId;
-        const duration = parseInt(data?.duration || "10");
-        const until = Date.now() + duration * 1000;
+        const graceDurationMs = parseInt(data?.duration ? data.duration * 1000 : (data?.graceDurationMs || 10000));
+        const graceEndTime = Date.now() + graceDurationMs;
+        const payload = {
+            sessionId: sid || "all",
+            graceEndTime,
+            graceDurationMs,
+            until: graceEndTime,
+            duration: graceDurationMs / 1000
+        };
         if (sid) {
-            io.to("session:" + sid).emit("timeout", { sessionId: sid, duration, until });
-            io.to("session:" + sid).emit("update", { type: "timeout", sessionId: sid, duration, until });
+            io.to("session:" + sid).emit("reset_grace", payload);
+            io.to("session:" + sid).emit("timeout", payload);
         }
-        io.emit("timeout", { sessionId: sid || "all", duration, until });
-        io.emit("update", { type: "timeout", sessionId: sid || "all", duration, until });
+        io.emit("reset_grace", payload);
+        io.emit("timeout", payload);
     });
 });
 

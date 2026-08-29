@@ -1303,10 +1303,10 @@ Problema a resolver:
             });
         }
 
-        // ── Timeout Alert con Cuenta Regresiva Sincronizada ──
+        // ── Timeout Alert con Cuenta Regresiva Sincronizada (Periodo de Gracia) ──
         let timeoutInterval = null;
 
-        function showTimeoutAlert(duration = 10, untilTimestamp = null) {
+        function showTimeoutAlert(durationSec = 10, untilTimestamp = null) {
             const banner = document.getElementById("timeoutBanner");
             const countdownEl = document.getElementById("timeoutCountdown");
             const progressFill = document.getElementById("timeoutProgressFill");
@@ -1315,14 +1315,17 @@ Problema a resolver:
             banner.style.display = "block";
             playPing();
 
-            const endTime = untilTimestamp || (Date.now() + duration * 1000);
-            const totalDurationMs = duration * 1000;
+            const totalDurationMs = (durationSec > 100 ? durationSec : durationSec * 1000);
+            const endTime = untilTimestamp || (Date.now() + totalDurationMs);
 
-            if (timeoutInterval) clearInterval(timeoutInterval);
+            if (timeoutInterval) {
+                clearInterval(timeoutInterval);
+                timeoutInterval = null;
+            }
 
             const updateTimer = () => {
                 const remainingMs = Math.max(0, endTime - Date.now());
-                const remainingSec = Math.ceil(remainingMs / 1000);
+                const remainingSec = (remainingMs / 1000).toFixed(1);
 
                 countdownEl.textContent = remainingSec + "s";
                 const pct = Math.max(0, Math.min(100, (remainingMs / totalDurationMs) * 100));
@@ -1331,7 +1334,7 @@ Problema a resolver:
                 if (remainingMs <= 0) {
                     clearInterval(timeoutInterval);
                     timeoutInterval = null;
-                    countdownEl.textContent = "0s";
+                    countdownEl.textContent = "0.0s";
                     progressFill.style.width = "0%";
                     setTimeout(() => {
                         banner.style.display = "none";
@@ -1344,7 +1347,6 @@ Problema a resolver:
             timeoutInterval = setInterval(updateTimer, 100);
         }
 
-        // ── Socket.io Realtime — actualizaciones instantáneas ──
         // Exponer función de prueba manual para verificar el banner en consola
         window.__testTimeoutBanner = showTimeoutAlert;
 
@@ -1364,15 +1366,27 @@ Problema a resolver:
                 }
                 rtSocket.on("connect", joinRoom);
                 rtSocket.io?.on("reconnect", joinRoom);
+                rtSocket.on("reset_grace", (data) => {
+                    if (data && data.graceEndTime) {
+                        const dur = data.graceDurationMs ? data.graceDurationMs / 1000 : 10;
+                        showTimeoutAlert(dur, data.graceEndTime);
+                    }
+                });
                 rtSocket.on("timeout", (data) => {
-                    showTimeoutAlert(data?.duration || 10, data?.until);
+                    const end = data?.graceEndTime || data?.until;
+                    const dur = data?.duration || (data?.graceDurationMs ? data.graceDurationMs / 1000 : 10);
+                    showTimeoutAlert(dur, end);
                 });
                 rtSocket.on("pause", (data) => {
-                    showTimeoutAlert(data?.duration || 10, data?.until);
+                    const end = data?.graceEndTime || data?.until;
+                    const dur = data?.duration || (data?.graceDurationMs ? data.graceDurationMs / 1000 : 10);
+                    showTimeoutAlert(dur, end);
                 });
                 rtSocket.on("update", (data) => {
-                    if (data && (data.type === "timeout" || data.type === "pause")) {
-                        showTimeoutAlert(data?.duration || 10, data?.until);
+                    if (data && (data.type === "timeout" || data.type === "pause" || data.graceEndTime)) {
+                        const end = data?.graceEndTime || data?.until;
+                        const dur = data?.duration || (data?.graceDurationMs ? data.graceDurationMs / 1000 : 10);
+                        showTimeoutAlert(dur, end);
                     } else {
                         pollStatus();
                         pollChat();

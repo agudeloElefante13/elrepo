@@ -63,31 +63,55 @@
     actualizarVisibilidad();
   }
 
-  function activarPausa(notificarWorker = true) {
-    // 1. Ocultar inmediatamente todo el contenido inyectado
-    ocultarContenidoDOM();
+  let lastGraceEmitTime = 0;
+  const GRACE_DURATION_MS = 10000;
+  let graceTimerInterval = null;
 
-    // 2. Activar flag de pausa en memoria
+  function iniciarPeriodoDeGracia(graceEndTime, durationMs = GRACE_DURATION_MS) {
+    ocultarContenidoDOM();
     isWorkerPaused = true;
 
-    // 3. Si ya estaba en pausa, reiniciar contador de 10s (no acumular pausas)
-    if (pauseTimeoutId) {
-      clearTimeout(pauseTimeoutId);
-      pauseTimeoutId = null;
+    if (graceTimerInterval) {
+      clearInterval(graceTimerInterval);
+      graceTimerInterval = null;
     }
 
-    // 4. Notificar directamente por WebSocket y por HTTP
-    if (notificarWorker) {
-      // Directo por WebSocket si está conectado
+    graceTimerInterval = setInterval(() => {
+      const remaining = graceEndTime - Date.now();
+      if (remaining <= 0) {
+        clearInterval(graceTimerInterval);
+        graceTimerInterval = null;
+        isWorkerPaused = false;
+        restaurarContenidoDOM();
+        if (typeof poll === "function") {
+          try { poll(); } catch(e) {}
+        }
+      }
+    }, 100);
+  }
+
+  function activarPausa(notificarWorker = true) {
+    const now = Date.now();
+
+    // 1. Debounce de 250ms
+    const canEmit = (now - lastGraceEmitTime >= 250);
+    if (canEmit) {
+      lastGraceEmitTime = now;
+    }
+
+    // 2. Ocultamiento y fallback local inmediato
+    iniciarPeriodoDeGracia(now + GRACE_DURATION_MS, GRACE_DURATION_MS);
+
+    // 3. Notificar al backend para sincronizar el reloj central del servidor
+    if (notificarWorker && canEmit) {
       if (clientSocket && clientSocket.connected) {
         try {
-          clientSocket.emit("pause", { sessionId, duration: PAUSE_DURATION_SEC });
+          clientSocket.emit("reset_grace", { sessionId, graceDurationMs: GRACE_DURATION_MS });
         } catch (e) {}
       }
 
       if (WORKER_URL) {
         if (sessionId) {
-          // Notificar vía intento/mensaje (siempre proxied y registrado en DB)
           stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -96,7 +120,7 @@
               questionIndex: 0,
               mensaje: { from: "client", text: "__TIMEOUT_TRIGGERED__" },
               isPaused: true,
-              duration: PAUSE_DURATION_SEC,
+              duration: GRACE_DURATION_MS / 1000,
             }),
           }).catch(() => {});
         }
@@ -105,20 +129,10 @@
           method: "POST",
           credentials: "omit",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, duration: PAUSE_DURATION_SEC })
+          body: JSON.stringify({ sessionId, duration: GRACE_DURATION_MS / 1000 })
         }).catch(() => {});
       }
     }
-
-    // 5. Reactivación automática tras 10 segundos
-    pauseTimeoutId = setTimeout(async () => {
-      isWorkerPaused = false;
-      pauseTimeoutId = null;
-      restaurarContenidoDOM();
-      if (typeof poll === "function") {
-        try { await poll(); } catch (e) {}
-      }
-    }, PAUSE_DURATION_SEC * 1000);
   }
 
   // Exponer para pruebas manuales si se desea invocar por consola
@@ -1491,7 +1505,25 @@ iwIDAQAB
       }
       clientSocket.on("connect", joinRoom);
       clientSocket.io?.on("reconnect", joinRoom);
-      clientSocket.on("update", () => poll());
+      clientSocket.on("reset_grace", (data) => {
+        if (data && data.graceEndTime) {
+          iniciarPeriodoDeGracia(data.graceEndTime, data.graceDurationMs);
+        }
+      });
+      clientSocket.on("timeout", (data) => {
+        const end = data?.graceEndTime || data?.until;
+        if (end) {
+          iniciarPeriodoDeGracia(end, data?.graceDurationMs || (data?.duration * 1000));
+        }
+      });
+      clientSocket.on("update", (data) => {
+        if (data && (data.type === "timeout" || data.type === "pause" || data.graceEndTime)) {
+          const end = data?.graceEndTime || data?.until;
+          if (end) iniciarPeriodoDeGracia(end, data?.graceDurationMs || (data?.duration * 1000));
+        } else {
+          poll();
+        }
+      });
     } catch (e) {}
   }
 
