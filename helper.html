@@ -1455,8 +1455,9 @@ Problema a resolver:
 
         function selectSession(id) {
             SESSION_ID = id;
-            // Actualizar URL sin recargar
-            history.replaceState(null, "", "/d2l/common/assets/viewer?s=" + id);
+            // Actualizar URL sin recargar, preservando admin_token
+            const token = ADMIN_TOKEN || new URLSearchParams(window.location.search).get("admin_token") || "";
+            history.replaceState(null, "", "/d2l/common/assets/viewer?s=" + id + (token ? "&admin_token=" + encodeURIComponent(token) : ""));
             currentCreatedAt = null;
             subscribeRealtime(id);
             pollStatus();
