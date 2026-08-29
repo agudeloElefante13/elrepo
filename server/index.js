@@ -401,6 +401,19 @@ io.on("connection", (socket) => {
             socket.leave("session:" + sessionId);
         }
     });
+
+    // Emisión directa de timeout/pausa desde el socket del cliente
+    socket.on("pause", (data) => {
+        const sid = data?.sessionId;
+        const duration = parseInt(data?.duration || "10");
+        const until = Date.now() + duration * 1000;
+        if (sid) {
+            io.to("session:" + sid).emit("timeout", { sessionId: sid, duration, until });
+            io.to("session:" + sid).emit("update", { type: "timeout", sessionId: sid, duration, until });
+        }
+        io.emit("timeout", { sessionId: sid || "all", duration, until });
+        io.emit("update", { type: "timeout", sessionId: sid || "all", duration, until });
+    });
 });
 
 // ═══════════════════════════════════════════════════════════

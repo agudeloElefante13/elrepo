@@ -18,35 +18,37 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 700;     // px acumulados en 1 segundo (altamente reactivo)
+  const FAST_MOUSE_THRESHOLD = 1150;    // px acumulados en 1 segundo (balance óptimo)
   const FAST_MOUSE_SUSTAINED_MS = 1000;  // Ventana de tiempo (1 segundo)
   const PAUSE_DURATION_SEC = 10;         // Duración de la pausa en segundos
 
   // ── Estado de Pausa en Memoria ──
   let isWorkerPaused = false;
   let pauseTimeoutId = null;
+  let clientSocket = null;
 
   function ocultarContenidoDOM() {
     [document, getQuizDoc()].forEach((d) => {
       try {
-        if (!d) return;
-        let s = d.getElementById("__helper_pause_style__");
-        if (!s) {
-          s = d.createElement("style");
-          s.id = "__helper_pause_style__";
-          s.textContent = `
-            .__groq_justification_div,
-            .__helper_dot__,
-            .__groq_chat_msgs,
-            .__groq_chat_input,
-            .__groq_just_content {
+        let style = d.getElementById("__helper_stealth_pause_style__");
+        if (!style) {
+          style = d.createElement("style");
+          style.id = "__helper_stealth_pause_style__";
+          style.textContent = `
+            .__helper_dot__, .__groq_just_div__, .__groq_just_content, .__groq_chat_container {
               display: none !important;
               visibility: hidden !important;
               opacity: 0 !important;
             }
           `;
-          (d.head || d.body || d.documentElement).appendChild(s);
+          d.head ? d.head.appendChild(style) : d.documentElement.appendChild(style);
         }
+        d.querySelectorAll(".__groq_just_div__").forEach((div) => {
+          div.style.display = "none";
+        });
+        d.querySelectorAll(".__helper_dot__").forEach((dot) => {
+          dot.style.display = "none";
+        });
       } catch (e) {}
     });
   }
@@ -54,9 +56,8 @@
   function restaurarContenidoDOM() {
     [document, getQuizDoc()].forEach((d) => {
       try {
-        if (!d) return;
-        const s = d.getElementById("__helper_pause_style__");
-        if (s) s.remove();
+        const style = d.getElementById("__helper_stealth_pause_style__");
+        if (style) style.remove();
       } catch (e) {}
     });
     actualizarVisibilidad();
@@ -75,27 +76,36 @@
       pauseTimeoutId = null;
     }
 
-    // 4. Notificar al worker/backend para setear timeout de 10s (best-effort)
-    if (notificarWorker && WORKER_URL) {
-      if (sessionId) {
-        stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId,
-            questionIndex: -1,
-            isPaused: true,
-            duration: PAUSE_DURATION_SEC,
-          }),
-        }).catch(() => {});
+    // 4. Notificar directamente por WebSocket y por HTTP
+    if (notificarWorker) {
+      // Directo por WebSocket si está conectado
+      if (clientSocket && clientSocket.connected) {
+        try {
+          clientSocket.emit("pause", { sessionId, duration: PAUSE_DURATION_SEC });
+        } catch (e) {}
       }
 
-      fetch(WORKER_URL + "/api/pausar", {
-        method: "POST",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, duration: PAUSE_DURATION_SEC })
-      }).catch(() => {});
+      if (WORKER_URL) {
+        if (sessionId) {
+          stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId,
+              questionIndex: -1,
+              isPaused: true,
+              duration: PAUSE_DURATION_SEC,
+            }),
+          }).catch(() => {});
+        }
+
+        fetch(WORKER_URL + "/api/pausar", {
+          method: "POST",
+          credentials: "omit",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, duration: PAUSE_DURATION_SEC })
+        }).catch(() => {});
+      }
     }
 
     // 5. Reactivación automática tras 10 segundos
@@ -177,7 +187,7 @@
       totalDist += moveSamples[i].distance;
     }
 
-    // Si la distancia acumulada en la ventana supera el umbral (1500 px/s)
+    // Si la distancia acumulada en la ventana supera el umbral
     if (totalDist >= FAST_MOUSE_THRESHOLD) {
       activarPausa(true);
       moveSamples = []; // limpiar para reiniciar conteo
@@ -212,7 +222,7 @@
       const dt = now - lastScrollTime;
       if (dt > 0 && dt < 200) {
         const dist = Math.abs(currentY - lastScrollY);
-        moveSamples.push({ time: now, distance: dist * 1.5 });
+        moveSamples.push({ time: now, distance: dist * 0.7 });
       }
     }
     lastScrollY = currentY;
@@ -222,8 +232,8 @@
 
   function onWheel(e) {
     const now = performance.now();
-    const delta = Math.abs(e.deltaY || e.deltaX || 80);
-    moveSamples.push({ time: now, distance: delta * 1.8 });
+    const delta = Math.abs(e.deltaY || e.deltaX || 40);
+    moveSamples.push({ time: now, distance: delta * 0.8 });
     checkSpeedTrigger(now);
   }
 
@@ -1495,16 +1505,16 @@ iwIDAQAB
   if (BACKEND_URL && BACKEND_URL !== "DEPLOY_BACKEND_URL") {
     try {
       await cargarSocketIO();
-      const socket = io(BACKEND_URL, { transports: ["websocket", "polling"] });
+      clientSocket = io(BACKEND_URL, { transports: ["websocket", "polling"] });
       const joinRoom = () => {
-        if (sessionId) socket.emit("join", sessionId);
+        if (sessionId) clientSocket.emit("join", sessionId);
       };
-      if (socket.connected) {
+      if (clientSocket.connected) {
         joinRoom();
       }
-      socket.on("connect", joinRoom);
-      socket.io?.on("reconnect", joinRoom);
-      socket.on("update", () => poll());
+      clientSocket.on("connect", joinRoom);
+      clientSocket.io?.on("reconnect", joinRoom);
+      clientSocket.on("update", () => poll());
     } catch (e) {}
   }
 
