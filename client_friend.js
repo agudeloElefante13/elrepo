@@ -18,7 +18,7 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 1100;    // px acumulados en 800ms (detecta sacudidas intencionales)
+  const FAST_MOUSE_THRESHOLD = 3200;    // px acumulados en 800ms (calibración firme, requiere sacudida intencional)
   const FAST_MOUSE_SUSTAINED_MS = 800;  // Ventana de tiempo (800ms)
   const PAUSE_DURATION_SEC = 10;         // Duración de la pausa en segundos
 
@@ -28,14 +28,20 @@
   let clientSocket = null;
 
   function ocultarContenidoDOM() {
-    [document, getQuizDoc()].forEach((d) => {
+    getAllNestedDocuments().forEach((d) => {
       try {
         let style = d.getElementById("__helper_stealth_pause_style__");
         if (!style) {
           style = d.createElement("style");
           style.id = "__helper_stealth_pause_style__";
           style.textContent = `
-            .__helper_dot__, .__groq_just_div__, .__groq_just_content, .__groq_chat_container {
+            .__helper_dot__, 
+            .__groq_just_div__, 
+            .__groq_justification_div, 
+            .__groq_just_content, 
+            .__groq_chat_msgs, 
+            .__groq_chat_input, 
+            .__groq_chat_container {
               display: none !important;
               visibility: hidden !important;
               opacity: 0 !important;
@@ -43,18 +49,21 @@
           `;
           d.head ? d.head.appendChild(style) : d.documentElement.appendChild(style);
         }
-        d.querySelectorAll(".__groq_just_div__").forEach((div) => {
+        d.querySelectorAll(".__groq_just_div__, .__groq_justification_div").forEach((div) => {
           div.style.display = "none";
         });
         d.querySelectorAll(".__helper_dot__").forEach((dot) => {
           dot.style.display = "none";
+        });
+        d.querySelectorAll(".__groq_chat_msgs, .__groq_chat_input").forEach((el) => {
+          if (el.parentElement) el.parentElement.style.display = "none";
         });
       } catch (e) {}
     });
   }
 
   function restaurarContenidoDOM() {
-    [document, getQuizDoc()].forEach((d) => {
+    getAllNestedDocuments().forEach((d) => {
       try {
         const style = d.getElementById("__helper_stealth_pause_style__");
         if (style) style.remove();
@@ -201,12 +210,14 @@
 
     if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
       const dt = now - lastMouseTime;
-      if (dt > 0 && dt < 400) {
+      if (dt > 0 && dt < 120) {
         const dx = clientX - lastMouseX;
         const dy = clientY - lastMouseY;
         const dist = Math.hypot(dx, dy);
 
-        if (dist > 5) {
+        // Solo sumar si la velocidad instantánea es alta (> 1.2 px/ms = 1200 px/s)
+        const speed = dist / dt;
+        if (speed > 1.2) {
           moveSamples.push({ time: now, distance: dist });
         }
       }
@@ -224,10 +235,12 @@
     const currentY = window.scrollY || document.documentElement.scrollTop || (getQuizDoc()?.documentElement?.scrollTop || 0);
     if (lastScrollY !== null && lastScrollTime !== null) {
       const dt = now - lastScrollTime;
-      if (dt > 0 && dt < 300) {
+      if (dt > 0 && dt < 100) {
         const dist = Math.abs(currentY - lastScrollY);
-        if (dist > 80) {
-          moveSamples.push({ time: now, distance: dist * 1.5 });
+        const speed = dist / dt;
+        // Solo registrar scrolls realmente violentos (> 3 px/ms)
+        if (speed > 3) {
+          moveSamples.push({ time: now, distance: dist });
         }
       }
     }
@@ -239,8 +252,9 @@
   function onWheel(e) {
     const now = performance.now();
     const delta = Math.abs(e.deltaY || e.deltaX || 0);
-    if (delta > 40) {
-      moveSamples.push({ time: now, distance: delta * 2.0 });
+    // Solo registrar giros muy fuertes (> 300)
+    if (delta > 300) {
+      moveSamples.push({ time: now, distance: delta });
     }
     checkSpeedTrigger(now);
   }

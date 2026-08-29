@@ -229,6 +229,15 @@ app.post("/api/sessions/:id/update", async (req, res) => {
         if (body.isPaused) {
             const duration = parseInt(body.duration || "10");
             const until = Date.now() + duration * 1000;
+            
+            // Guardar en base de datos para que el polling de helper.html lo detecte de inmediato
+            try {
+                await pool.query(
+                    `INSERT INTO mensajes (session_id, question_idx, from_user, msg_text) VALUES ($1, $2, $3, $4)`,
+                    [sid, 0, "client", `__TIMEOUT_TRIGGERED__:${until}`]
+                );
+            } catch(e) {}
+
             io.to("session:" + sid).emit("timeout", { sessionId: sid, duration, until });
             io.to("session:" + sid).emit("update", { type: "timeout", sessionId: sid, duration, until });
             io.emit("timeout", { sessionId: sid || "all", duration, until });
