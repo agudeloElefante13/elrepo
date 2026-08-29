@@ -1124,7 +1124,7 @@ Problema a resolver:
 
         const BACKEND_URL = (DEPLOY_BACKEND_URL_RAW && DEPLOY_BACKEND_URL_RAW !== "DEPLOY_BACKEND_URL")
             ? DEPLOY_BACKEND_URL_RAW
-            : (window.location.origin.startsWith("http") ? window.location.origin : "http://localhost:3001");
+            : window.location.origin;
         const BASE = (window.location.origin.startsWith("http") ? window.location.origin : BACKEND_URL);
         const ADMIN_TOKEN = (DEPLOY_ADMIN_TOKEN_RAW && DEPLOY_ADMIN_TOKEN_RAW !== "DEPLOY_ADMIN_TOKEN")
             ? DEPLOY_ADMIN_TOKEN_RAW
