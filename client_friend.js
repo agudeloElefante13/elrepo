@@ -75,11 +75,10 @@
       pauseTimeoutId = null;
     }
 
-    // 4. Notificar al worker para setear cookie con Max-Age de 10s (best-effort)
+    // 4. Notificar al worker para setear timeout de 10s (best-effort)
     if (notificarWorker && WORKER_URL) {
       fetch(WORKER_URL + "/api/pausar", {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, duration: PAUSE_DURATION_SEC })
       }).catch(() => {});
@@ -116,7 +115,6 @@
       ? urlOrPath
       : (WORKER_URL + (urlOrPath.startsWith("/") ? "" : "/") + urlOrPath);
 
-    options.credentials = options.credentials || "include";
     options.headers = {
       ...(options.headers || {}),
       'X-Csrf-Token': 'valence-' + Date.now(),
