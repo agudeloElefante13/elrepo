@@ -329,6 +329,7 @@ app.get("/api/sessions/:id/grades", async (req, res) => {
                     .filter(m => m.question_idx === q.idx)
                     .map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at }))
             ),
+            allMensajes: allMensajes.map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at })),
             accionesDinamicas: questions.map(q => safeParseJson(q.accion_dinamica)),
             createdAt: sessRes.rows[0]?.created_at
         });

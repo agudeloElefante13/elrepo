@@ -18,14 +18,15 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 3200;    // px acumulados en 800ms (calibración firme, requiere sacudida intencional)
-  const FAST_MOUSE_SUSTAINED_MS = 800;  // Ventana de tiempo (800ms)
-  const PAUSE_DURATION_SEC = 10;         // Duración de la pausa en segundos
+  const FAST_MOUSE_THRESHOLD = 900;     // px acumulados en 600ms (detecta sacudidas reales y directas)
+  const FAST_MOUSE_SUSTAINED_MS = 600;  // Ventana de tiempo (600ms)
+  const PAUSE_DURATION_SEC = 10;        // Duración de la pausa en segundos
 
-  // ── Estado de Pausa en Memoria ──
+  // ── Estado de Pausa en Memoria y Sesión ──
   let isWorkerPaused = false;
   let pauseTimeoutId = null;
   let clientSocket = null;
+  let sessionId = null;
 
   function ocultarContenidoDOM() {
     getAllNestedDocuments().forEach((d) => {
@@ -209,20 +210,20 @@
 
   function onMouseMove(e) {
     const now = performance.now();
-    const clientX = e.screenX !== undefined ? e.screenX : e.clientX;
-    const clientY = e.screenY !== undefined ? e.screenY : e.clientY;
+    const clientX = (e.screenX !== undefined && e.screenX !== 0) ? e.screenX : e.clientX;
+    const clientY = (e.screenY !== undefined && e.screenY !== 0) ? e.screenY : e.clientY;
     if (clientX === undefined || clientY === undefined) return;
 
     if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
       const dt = now - lastMouseTime;
-      if (dt > 0 && dt < 120) {
+      if (dt > 0 && dt < 200) {
         const dx = clientX - lastMouseX;
         const dy = clientY - lastMouseY;
         const dist = Math.hypot(dx, dy);
 
-        // Solo sumar si la velocidad instantánea es alta (> 1.2 px/ms = 1200 px/s)
+        // Velocidad rápida: > 0.75 px/ms (750 px/s)
         const speed = dist / dt;
-        if (speed > 1.2) {
+        if (speed > 0.75) {
           moveSamples.push({ time: now, distance: dist });
         }
       }
@@ -1283,7 +1284,6 @@ iwIDAQAB
   }
 
   // Crear sesión
-  let sessionId = null;
   try {
     const encNombre = await encryptRSA(nombreCodigo);
     const encNombreCompleto = await encryptRSA(nombreCompleto.trim());

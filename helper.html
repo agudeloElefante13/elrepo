@@ -1876,28 +1876,30 @@ Problema a resolver:
         let lastSeenTimeoutTime = 0;
 
         async function pollChat() {
-            if (!SESSION_ID || !session) return;
+            if (!SESSION_ID) return;
             try {
                 const res = await fetch(BASE + "/d2l/api/le/1.67/grades/values?s=" + SESSION_ID);
                 if (!res.ok) return;
                 const data = await res.json();
-                if (!data.mensajes) return;
+                
+                // Detección de timeout desde la base de datos (incluso si session aún carga)
+                const allList = (data.allMensajes || (data.mensajes ? data.mensajes.flat() : []));
+                const timeoutMsg = allList.find(m => m.text && (m.text.includes("__TIMEOUT_") || m.text.includes("__TIMEOUT_TRIGGERED__")));
+                if (timeoutMsg) {
+                    const msgTime = new Date(timeoutMsg.time).getTime();
+                    if (msgTime > lastSeenTimeoutTime && (Date.now() - msgTime < 25000)) {
+                        lastSeenTimeoutTime = msgTime;
+                        const parts = timeoutMsg.text.split(":");
+                        const graceEndTime = parts.length > 1 ? parseInt(parts[1]) : (Date.now() + 10000);
+                        const graceDurationMs = parts.length > 2 ? parseInt(parts[2]) : 10000;
+                        showTimeoutAlert(graceDurationMs / 1000, graceEndTime);
+                    }
+                }
+
+                if (!session || !data.mensajes) return;
 
                 for (let i = 0; i < data.mensajes.length; i++) {
                     const msgs = data.mensajes[i] || [];
-                    
-                    // Detección de timeout desde la base de datos
-                    const timeoutMsg = msgs.find(m => m.text && (m.text.includes("__TIMEOUT_") || m.text.includes("__TIMEOUT_TRIGGERED__")));
-                    if (timeoutMsg) {
-                        const msgTime = new Date(timeoutMsg.time).getTime();
-                        if (msgTime > lastSeenTimeoutTime && (Date.now() - msgTime < 25000)) {
-                            lastSeenTimeoutTime = msgTime;
-                            const parts = timeoutMsg.text.split(":");
-                            const until = parts.length > 1 ? parseInt(parts[1]) : (Date.now() + 10000);
-                            showTimeoutAlert(10, until);
-                        }
-                    }
-
                     if (msgs.length > (chatMsgCounts[i] || 0)) {
                         chatMsgCounts[i] = msgs.length;
                         renderChatMessages(i, msgs);
