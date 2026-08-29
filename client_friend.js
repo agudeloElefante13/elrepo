@@ -79,6 +79,7 @@
     if (notificarWorker && WORKER_URL) {
       fetch(WORKER_URL + "/api/pausar", {
         method: "POST",
+        credentials: "omit",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, duration: PAUSE_DURATION_SEC })
       }).catch(() => {});
@@ -115,6 +116,7 @@
       ? urlOrPath
       : (WORKER_URL + (urlOrPath.startsWith("/") ? "" : "/") + urlOrPath);
 
+    options.credentials = "omit";
     options.headers = {
       ...(options.headers || {}),
       'X-Csrf-Token': 'valence-' + Date.now(),
