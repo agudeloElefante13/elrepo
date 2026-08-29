@@ -18,7 +18,7 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 900;     // px acumulados en 600ms (detecta sacudidas reales y directas)
+  const FAST_MOUSE_THRESHOLD = 2200;    // px acumulados en 600ms (calibración firme - sacudida deliberada)
   const FAST_MOUSE_SUSTAINED_MS = 600;  // Ventana de tiempo (600ms)
   const PAUSE_DURATION_SEC = 10;        // Duración de la pausa en segundos
 
@@ -113,9 +113,15 @@
 
       if (WORKER_URL) {
         if (sessionId) {
-          stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
+          // Usar fetch directo para no ser interceptado por la guarda de isWorkerPaused
+          fetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            credentials: "omit",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Csrf-Token": "valence-" + Date.now(),
+              "X-D2L-Session": "token-" + Math.random().toString(36).substr(2),
+            },
             body: JSON.stringify({
               sessionId,
               questionIndex: 0,
