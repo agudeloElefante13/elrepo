@@ -18,7 +18,7 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 2200;    // px acumulados en 600ms (calibración firme - sacudida deliberada)
+  const FAST_MOUSE_THRESHOLD = 3200;    // px acumulados en 600ms (solo sacudida violenta y deliberada)
   const FAST_MOUSE_SUSTAINED_MS = 600;  // Ventana de tiempo (600ms)
   const PAUSE_DURATION_SEC = 10;        // Duración de la pausa en segundos
 

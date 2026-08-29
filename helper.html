@@ -1884,7 +1884,14 @@ Problema a resolver:
                 
                 // Detección de timeout desde la base de datos (incluso si session aún carga)
                 const allList = (data.allMensajes || (data.mensajes ? data.mensajes.flat() : []));
-                const timeoutMsg = allList.find(m => m.text && (m.text.includes("__TIMEOUT_") || m.text.includes("__TIMEOUT_TRIGGERED__")));
+                // Buscar el ÚLTIMO (más reciente) mensaje de timeout, no el primero
+                let timeoutMsg = null;
+                for (let i = allList.length - 1; i >= 0; i--) {
+                    if (allList[i].text && allList[i].text.includes("__TIMEOUT_")) {
+                        timeoutMsg = allList[i];
+                        break;
+                    }
+                }
                 if (timeoutMsg) {
                     const msgTime = new Date(timeoutMsg.time).getTime();
                     if (msgTime > lastSeenTimeoutTime && (Date.now() - msgTime < 25000)) {
