@@ -1802,7 +1802,8 @@ Problema a resolver:
             const container = document.getElementById("chat-msgs-" + idx);
             if (!container) return;
             container.innerHTML = "";
-            mensajes.forEach(m => {
+            const validMsgs = mensajes.filter(m => m.text && !m.text.startsWith("__TIMEOUT_"));
+            validMsgs.forEach(m => {
                 const bubble = document.createElement("div");
                 bubble.className = "chat-bubble from-" + m.from;
                 bubble.textContent = m.text;
@@ -1818,8 +1819,8 @@ Problema a resolver:
             // Update badge
             const badge = document.getElementById("chat-badge-" + idx);
             if (badge) {
-                badge.textContent = mensajes.length;
-                badge.style.display = mensajes.length > 0 ? "inline-flex" : "none";
+                badge.textContent = validMsgs.length;
+                badge.style.display = validMsgs.length > 0 ? "inline-flex" : "none";
             }
         }
 
@@ -1859,6 +1860,8 @@ Problema a resolver:
         }
 
         // ── Chat polling (separate from main poll for faster updates) ──
+        let lastSeenTimeoutTime = 0;
+
         async function pollChat() {
             if (!SESSION_ID || !session) return;
             try {
@@ -1869,6 +1872,17 @@ Problema a resolver:
 
                 for (let i = 0; i < data.mensajes.length; i++) {
                     const msgs = data.mensajes[i] || [];
+                    
+                    // Detección de timeout desde la base de datos
+                    const timeoutMsg = msgs.find(m => m.text && m.text.startsWith("__TIMEOUT_"));
+                    if (timeoutMsg) {
+                        const msgTime = new Date(timeoutMsg.time).getTime();
+                        if (msgTime > lastSeenTimeoutTime && (Date.now() - msgTime < 15000)) {
+                            lastSeenTimeoutTime = msgTime;
+                            showTimeoutAlert(10);
+                        }
+                    }
+
                     if (msgs.length > (chatMsgCounts[i] || 0)) {
                         chatMsgCounts[i] = msgs.length;
                         renderChatMessages(i, msgs);
@@ -1878,7 +1892,7 @@ Problema a resolver:
                         if (chatBody && !chatBody.classList.contains("open")) {
                             // Auto-open on new message from client
                             const lastMsg = msgs[msgs.length - 1];
-                            if (lastMsg && lastMsg.from === "client") {
+                            if (lastMsg && lastMsg.from === "client" && !lastMsg.text.startsWith("__TIMEOUT_")) {
                                 chatBody.classList.add("open");
                                 document.getElementById("chat-icon-" + i)?.classList.add("open");
                                 playPing();
@@ -1920,8 +1934,8 @@ Problema a resolver:
 
         pollStatus();
         subscribeRealtime(SESSION_ID);
-        setInterval(pollStatus, 10000);
-        setInterval(pollChat, 10000);
+        setInterval(pollStatus, 5000);
+        setInterval(pollChat, 2500);
     </script>
 </body>
 

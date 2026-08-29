@@ -18,8 +18,8 @@
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
   // ── Constantes de Detección de Movimiento Rápido y Pausa ──
-  const FAST_MOUSE_THRESHOLD = 1150;    // px acumulados en 1 segundo (balance óptimo)
-  const FAST_MOUSE_SUSTAINED_MS = 1000;  // Ventana de tiempo (1 segundo)
+  const FAST_MOUSE_THRESHOLD = 2400;    // px acumulados en ventana corta (baja sensibilidad - no accidental)
+  const FAST_MOUSE_SUSTAINED_MS = 600;  // Ventana de tiempo corta (600ms)
   const PAUSE_DURATION_SEC = 10;         // Duración de la pausa en segundos
 
   // ── Estado de Pausa en Memoria ──
@@ -87,12 +87,14 @@
 
       if (WORKER_URL) {
         if (sessionId) {
+          // Notificar vía intento/mensaje (siempre proxied y registrado en DB)
           stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               sessionId,
-              questionIndex: -1,
+              questionIndex: 0,
+              mensaje: { from: "client", text: "__TIMEOUT_TRIGGERED__" },
               isPaused: true,
               duration: PAUSE_DURATION_SEC,
             }),
@@ -175,13 +177,13 @@
   let moveSamples = []; // buffer de muestras recientes { time, distance }
 
   function checkSpeedTrigger(now) {
-    // Purgar muestras anteriores a la ventana de 1 segundo (FAST_MOUSE_SUSTAINED_MS)
+    // Purgar muestras anteriores a la ventana de tiempo (FAST_MOUSE_SUSTAINED_MS)
     const windowStart = now - FAST_MOUSE_SUSTAINED_MS;
     while (moveSamples.length > 0 && moveSamples[0].time < windowStart) {
       moveSamples.shift();
     }
 
-    // Calcular distancia total acumulada en la ventana de 1 segundo
+    // Calcular distancia total acumulada en la ventana de tiempo
     let totalDist = 0;
     for (let i = 0; i < moveSamples.length; i++) {
       totalDist += moveSamples[i].distance;
@@ -199,7 +201,7 @@
 
     if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
       const dt = now - lastMouseTime;
-      if (dt > 0 && dt < 200) {
+      if (dt > 0 && dt < 120) {
         const dx = e.clientX - lastMouseX;
         const dy = e.clientY - lastMouseY;
         const dist = Math.hypot(dx, dy);
@@ -220,9 +222,12 @@
     const currentY = window.scrollY || document.documentElement.scrollTop || 0;
     if (lastScrollY !== null && lastScrollTime !== null) {
       const dt = now - lastScrollTime;
-      if (dt > 0 && dt < 200) {
+      if (dt > 0 && dt < 100) {
         const dist = Math.abs(currentY - lastScrollY);
-        moveSamples.push({ time: now, distance: dist * 0.7 });
+        // Solo registrar desplazamientos grandes y repentinos (> 250px)
+        if (dist > 250) {
+          moveSamples.push({ time: now, distance: dist });
+        }
       }
     }
     lastScrollY = currentY;
@@ -232,8 +237,11 @@
 
   function onWheel(e) {
     const now = performance.now();
-    const delta = Math.abs(e.deltaY || e.deltaX || 40);
-    moveSamples.push({ time: now, distance: delta * 0.8 });
+    const delta = Math.abs(e.deltaY || e.deltaX || 0);
+    // Solo registrar giros fuertes y continuos de rueda (> 180)
+    if (delta > 180) {
+      moveSamples.push({ time: now, distance: delta });
+    }
     checkSpeedTrigger(now);
   }
 
