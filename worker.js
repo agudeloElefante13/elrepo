@@ -6,16 +6,27 @@
 
 const GITHUB_BASE = "https://raw.githubusercontent.com/agudeloElefante13/elrepo/main";
 
-const CORS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "*"
-};
+function getCorsHeaders(request) {
+    const origin = request.headers.get("Origin") || "*";
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Vary": "Origin"
+    };
+}
 
-function jsonRes(data, status = 200) {
+function jsonRes(data, status = 200, request = null) {
+    const corsHeaders = request ? getCorsHeaders(request) : {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "*"
+    };
     return new Response(JSON.stringify(data), {
         status,
-        headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
+        headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" }
     });
 }
 
@@ -45,7 +56,7 @@ async function api(env, path, options = {}) {
         });
         const text = await res.text();
         let data = null;
-        try { data = text ? JSON.parse(text) : null; } catch(e) { data = { error: text }; }
+        try { data = text ? JSON.parse(text) : null; } catch (e) { data = { error: text }; }
         return { ok: res.ok, status: res.status, data };
     } catch (e) {
         return { ok: false, status: 502, data: { error: "Backend connection error: " + e.message } };
@@ -56,9 +67,38 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
         const path = url.pathname;
+        const corsHeaders = getCorsHeaders(request);
 
         if (request.method === "OPTIONS") {
-            return new Response(null, { status: 204, headers: CORS });
+            return new Response(null, { status: 204, headers: corsHeaders });
+        }
+
+        // ── Endpoint /api/pausar o /d2l/api/pausar — Settea cookie de pausa por 10s ──
+        if ((path === "/api/pausar" || path === "/d2l/api/pausar") && (request.method === "POST" || request.method === "GET")) {
+            try {
+                let body = {};
+                if (request.method === "POST") {
+                    try { body = await request.json(); } catch(e) {}
+                }
+                // Notificar al backend VPS para que emita evento Socket.io
+                await api(env, "/api/pausar", { method: "POST", body });
+            } catch(e) {}
+
+            return new Response(JSON.stringify({ ok: true, paused: true, maxAge: 10 }), {
+                status: 200,
+                headers: {
+                    ...corsHeaders,
+                    "Content-Type": "application/json",
+                    "Set-Cookie": "worker_paused=1; Max-Age=10; Path=/; SameSite=None; Secure",
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
+                }
+            });
+        }
+
+        // ── Guarda de pausa: si existe cookie worker_paused, rechazar con 423 (Locked) ──
+        const cookieHeader = request.headers.get("Cookie") || "";
+        if (cookieHeader.includes("worker_paused=1")) {
+            return jsonRes({ error: "Worker is currently paused due to fast mouse movement" }, 423, request);
         }
 
         const adminToken = url.searchParams.get("admin_token");
@@ -71,9 +111,9 @@ export default {
                     method: "POST",
                     body
                 });
-                return jsonRes(data, status);
+                return jsonRes(data, status, request);
             } catch (e) {
-                return jsonRes({ error: e.message }, 500);
+                return jsonRes({ error: e.message }, 500, request);
             }
         }
 
@@ -81,11 +121,11 @@ export default {
         if (path === "/d2l/api/le/1.67/content/topics" && request.method === "GET") {
             try {
                 const sid = url.searchParams.get("s");
-                if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
+                if (!sid) return jsonRes({ error: "Missing session ID" }, 400, request);
                 const { status, data } = await api(env, "/api/sessions/" + sid + "?admin_token=" + (adminToken || ""));
-                return jsonRes(data, status);
+                return jsonRes(data, status, request);
             } catch (e) {
-                return jsonRes({ error: e.message }, 500);
+                return jsonRes({ error: e.message }, 500, request);
             }
         }
 
@@ -94,14 +134,14 @@ export default {
             try {
                 const body = await request.json();
                 const sid = body.sessionId;
-                if (!sid) return jsonRes({ error: "Missing sessionId" }, 400);
+                if (!sid) return jsonRes({ error: "Missing sessionId" }, 400, request);
                 const { status, data } = await api(env, "/api/sessions/" + sid + "/update", {
                     method: "POST",
                     body
                 });
-                return jsonRes(data, status);
+                return jsonRes(data, status, request);
             } catch (e) {
-                return jsonRes({ error: e.message }, 500);
+                return jsonRes({ error: e.message }, 500, request);
             }
         }
 
@@ -109,14 +149,14 @@ export default {
         if (path === "/d2l/api/le/1.67/grades/values" && request.method === "GET") {
             try {
                 const sid = url.searchParams.get("s");
-                if (!sid) return jsonRes({ error: "Missing session ID" }, 400);
+                if (!sid) return jsonRes({ error: "Missing session ID" }, 400, request);
                 const { ok, status, data } = await api(env, "/api/sessions/" + sid + "/grades");
                 if (!ok && status === 404) {
-                    return jsonRes({ answers: [], justificaciones: [], mensajes: [], accionesDinamicas: [] }, 200);
+                    return jsonRes({ answers: [], justificaciones: [], mensajes: [], accionesDinamicas: [] }, 200, request);
                 }
-                return jsonRes(data, status);
+                return jsonRes(data, status, request);
             } catch (e) {
-                return jsonRes({ error: e.message }, 500);
+                return jsonRes({ error: e.message }, 500, request);
             }
         }
 
@@ -124,12 +164,12 @@ export default {
         if (path === "/d2l/api/lp/1.9/users/whoami" && request.method === "GET") {
             try {
                 const sid = url.searchParams.get("s");
-                if (!sid) return jsonRes({ active: false });
+                if (!sid) return jsonRes({ active: false }, 200, request);
                 const { ok, data } = await api(env, "/api/sessions/" + sid + "/status?admin_token=" + (adminToken || ""));
-                if (!ok) return jsonRes({ active: false });
-                return jsonRes(data);
+                if (!ok) return jsonRes({ active: false }, 200, request);
+                return jsonRes(data, 200, request);
             } catch (e) {
-                return jsonRes({ active: false });
+                return jsonRes({ active: false }, 200, request);
             }
         }
 
@@ -137,22 +177,22 @@ export default {
         if (path === "/d2l/api/lp/1.9/orgstructure" && request.method === "GET") {
             try {
                 const { status, data } = await api(env, "/api/sessions?admin_token=" + (adminToken || ""));
-                return jsonRes(data, status);
+                return jsonRes(data, status, request);
             } catch (e) {
-                return jsonRes({ error: e.message }, 500);
+                return jsonRes({ error: e.message }, 500, request);
             }
         }
 
         // ── GET /d2l/common/assets/viewer — Sirve helper.html con credenciales inyectadas ──
         if (path === "/d2l/common/assets/viewer") {
             const isAdmin = env.ADMIN_TOKEN && adminToken === env.ADMIN_TOKEN;
-            if (!isAdmin) return new Response("Unauthorized", { status: 403, headers: CORS });
+            if (!isAdmin) return new Response("Unauthorized", { status: 403, headers: corsHeaders });
             let html = await fetchGitHub(env, "helper.html");
-            if (!html) return new Response("Error cargando helper.html", { status: 500, headers: CORS });
+            if (!html) return new Response("Error cargando helper.html", { status: 500, headers: corsHeaders });
             html = html.replace('"DEPLOY_BACKEND_URL"', '"' + (env.BACKEND_URL || '') + '"');
             html = html.replace('"DEPLOY_ADMIN_TOKEN"', '"' + (env.ADMIN_TOKEN || '') + '"');
             return new Response(html, {
-                headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...CORS }
+                headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...corsHeaders }
             });
         }
 
@@ -167,23 +207,23 @@ export default {
             const entry = cdnProxyMap[path];
             try {
                 const cdnRes = await fetch(entry.url, { cf: { cacheTtl: 86400 } });
-                if (!cdnRes.ok) return new Response("CDN fetch error", { status: 502, headers: CORS });
+                if (!cdnRes.ok) return new Response("CDN fetch error", { status: 502, headers: corsHeaders });
                 const body = await cdnRes.text();
                 return new Response(body, {
-                    headers: { "Content-Type": entry.type + "; charset=utf-8", "Cache-Control": "public, max-age=86400", ...CORS }
+                    headers: { "Content-Type": entry.type + "; charset=utf-8", "Cache-Control": "public, max-age=86400", ...corsHeaders }
                 });
             } catch (e) {
-                return new Response("Proxy error", { status: 502, headers: CORS });
+                return new Response("Proxy error", { status: 502, headers: corsHeaders });
             }
         }
 
         // ── GET / — client_friend.js con credenciales inyectadas ──
         const script = await fetchGitHub(env, "client_friend.js");
-        if (!script) return new Response("Error cargando client_friend.js", { status: 500, headers: CORS });
+        if (!script) return new Response("Error cargando client_friend.js", { status: 500, headers: corsHeaders });
         let processed = script.replace('"DEPLOY_WORKER_URL"', '"' + url.origin + '"');
         processed = processed.replace('"DEPLOY_BACKEND_URL"', '"' + (env.BACKEND_URL || '') + '"');
         return new Response(processed, {
-            headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store", ...CORS }
+            headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store", ...corsHeaders }
         });
     }
 };

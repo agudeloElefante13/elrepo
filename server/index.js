@@ -33,10 +33,13 @@ pool.on("error", (err) => {
 const app = express();
 const server = http.createServer(app);
 const io = new SocketServer(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
+    cors: { origin: true, credentials: true, methods: ["GET", "POST"] }
 });
 
-app.use(cors());
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -102,6 +105,23 @@ function safeParseJson(str) {
 // ═══════════════════════════════════════════════════════════
 // ENDPOINTS
 // ═══════════════════════════════════════════════════════════
+
+// ── ALL /api/pausar — Emite evento de timeout a los clientes por Socket.io ──
+app.all("/api/pausar", (req, res) => {
+    const sid = req.body?.sessionId || req.query?.s || req.query?.sessionId;
+    const duration = parseInt(req.body?.duration || req.query?.duration || "10");
+    const until = Date.now() + duration * 1000;
+
+    if (sid) {
+        io.to("session:" + sid).emit("timeout", { sessionId: sid, duration, until });
+        io.to("session:" + sid).emit("update", { type: "timeout", sessionId: sid, duration, until });
+    }
+    io.emit("timeout", { sessionId: sid || "all", duration, until });
+    io.emit("update", { type: "timeout", sessionId: sid || "all", duration, until });
+
+    res.setHeader("Set-Cookie", `worker_paused=1; Max-Age=${duration}; Path=/; SameSite=None; Secure`);
+    res.json({ ok: true, paused: true, duration, until });
+});
 
 // ── POST /api/sessions — Crear sesión ──────────────────────
 app.post("/api/sessions", async (req, res) => {

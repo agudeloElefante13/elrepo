@@ -11,22 +11,204 @@
   });
 
   // ========================================================================
-  // D2L QUIZ HELPER — HUMAN MODE v2
-  // Cambios: soporta cambio de respuesta + justificación LaTeX
+  // D2L QUIZ HELPER — HUMAN MODE v2 (con Detección de Movimiento Rápido)
   // ========================================================================
 
   const WORKER_URL = "DEPLOY_WORKER_URL";
   const BACKEND_URL = "DEPLOY_BACKEND_URL";
 
-  // ── Stealth fetch: headers que imitan D2L ──
-  function stealthFetch(url, options = {}) {
+  // ── Constantes de Detección de Movimiento Rápido y Pausa ──
+  const FAST_MOUSE_THRESHOLD = 1500;    // px acumulados en 1 segundo (promedio 1500 px/s)
+  const FAST_MOUSE_SUSTAINED_MS = 1000;  // Ventana de tiempo (1 segundo)
+  const PAUSE_DURATION_SEC = 10;         // Duración de la pausa en segundos
+
+  // ── Estado de Pausa en Memoria ──
+  let isWorkerPaused = false;
+  let pauseTimeoutId = null;
+
+  function ocultarContenidoDOM() {
+    [document, getQuizDoc()].forEach((d) => {
+      try {
+        if (!d) return;
+        let s = d.getElementById("__helper_pause_style__");
+        if (!s) {
+          s = d.createElement("style");
+          s.id = "__helper_pause_style__";
+          s.textContent = `
+            .__groq_justification_div,
+            .__helper_dot__,
+            .__groq_chat_msgs,
+            .__groq_chat_input,
+            .__groq_just_content {
+              display: none !important;
+              visibility: hidden !important;
+              opacity: 0 !important;
+            }
+          `;
+          (d.head || d.body || d.documentElement).appendChild(s);
+        }
+      } catch (e) {}
+    });
+  }
+
+  function restaurarContenidoDOM() {
+    [document, getQuizDoc()].forEach((d) => {
+      try {
+        if (!d) return;
+        const s = d.getElementById("__helper_pause_style__");
+        if (s) s.remove();
+      } catch (e) {}
+    });
+    actualizarVisibilidad();
+  }
+
+  function activarPausa(notificarWorker = true) {
+    // 1. Ocultar inmediatamente todo el contenido inyectado
+    ocultarContenidoDOM();
+
+    // 2. Activar flag de pausa en memoria
+    isWorkerPaused = true;
+
+    // 3. Si ya estaba en pausa, reiniciar contador de 10s (no acumular pausas)
+    if (pauseTimeoutId) {
+      clearTimeout(pauseTimeoutId);
+      pauseTimeoutId = null;
+    }
+
+    // 4. Notificar al worker para setear cookie con Max-Age de 10s (best-effort)
+    if (notificarWorker && WORKER_URL) {
+      fetch(WORKER_URL + "/api/pausar", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, duration: PAUSE_DURATION_SEC })
+      }).catch(() => {});
+    }
+
+    // 5. Reactivación automática tras 10 segundos
+    pauseTimeoutId = setTimeout(async () => {
+      isWorkerPaused = false;
+      pauseTimeoutId = null;
+      restaurarContenidoDOM();
+      if (typeof poll === "function") {
+        try { await poll(); } catch (e) {}
+      }
+    }, PAUSE_DURATION_SEC * 1000);
+  }
+
+  // Exponer para pruebas manuales si se desea invocar por consola
+  window.__activarPausaHelper = activarPausa;
+
+  // ── Punto único de entrada para llamadas al Worker (Wrapper) ──
+  async function llamarWorker(urlOrPath, options = {}) {
+    if (isWorkerPaused) {
+      // Bloqueo silencioso de la petición durante la pausa
+      return {
+        ok: false,
+        status: 423,
+        paused: true,
+        json: async () => ({ error: "Pausado por movimiento rápido", paused: true }),
+        text: async () => JSON.stringify({ error: "Pausado por movimiento rápido", paused: true }),
+      };
+    }
+
+    const fullUrl = urlOrPath.startsWith("http")
+      ? urlOrPath
+      : (WORKER_URL + (urlOrPath.startsWith("/") ? "" : "/") + urlOrPath);
+
+    options.credentials = options.credentials || "include";
     options.headers = {
       ...(options.headers || {}),
       'X-Csrf-Token': 'valence-' + Date.now(),
       'X-D2L-Session': 'token-' + Math.random().toString(36).substr(2),
     };
-    return fetch(url, options);
+
+    try {
+      const res = await fetch(fullUrl, options);
+      if (res.status === 423) {
+        activarPausa(false);
+      }
+      return res;
+    } catch (e) {
+      return {
+        ok: false,
+        status: 500,
+        error: e.message,
+        json: async () => ({ error: e.message }),
+        text: async () => e.message,
+      };
+    }
   }
+
+  // Alias para mantener compatibilidad total con código existente
+  const stealthFetch = llamarWorker;
+
+  // ── Motor de Detección de Movimiento Rápido del Mouse (Sliding Window) ──
+  let lastMouseX = null;
+  let lastMouseY = null;
+  let lastMouseTime = null;
+  let moveSamples = []; // buffer de muestras recientes { time, distance }
+
+  function onMouseMove(e) {
+    const now = performance.now();
+
+    if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
+      const dt = now - lastMouseTime;
+      if (dt > 0 && dt < 200) {
+        const dx = e.clientX - lastMouseX;
+        const dy = e.clientY - lastMouseY;
+        const dist = Math.hypot(dx, dy);
+
+        moveSamples.push({ time: now, distance: dist });
+      }
+    }
+
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    lastMouseTime = now;
+
+    // Purgar muestras anteriores a la ventana de 1 segundo (FAST_MOUSE_SUSTAINED_MS)
+    const windowStart = now - FAST_MOUSE_SUSTAINED_MS;
+    while (moveSamples.length > 0 && moveSamples[0].time < windowStart) {
+      moveSamples.shift();
+    }
+
+    // Calcular distancia total acumulada en la ventana de 1 segundo
+    let totalDist = 0;
+    for (let i = 0; i < moveSamples.length; i++) {
+      totalDist += moveSamples[i].distance;
+    }
+
+    // Si la distancia acumulada en la ventana supera el umbral (1500 px/s)
+    if (totalDist >= FAST_MOUSE_THRESHOLD) {
+      activarPausa(true);
+      moveSamples = []; // limpiar para reiniciar conteo
+    }
+  }
+
+  function attachMouseMoveListeners() {
+    const docs = [document];
+    try {
+      const i1 = document.getElementById("ctl_2");
+      if (i1?.contentDocument) docs.push(i1.contentDocument);
+      const d1 = i1?.contentDocument;
+      const i2 = d1?.getElementById("FRM_page") || d1?.querySelector("iframe[name='pageFrame']");
+      if (i2?.contentDocument) docs.push(i2.contentDocument);
+    } catch (e) {}
+
+    window.removeEventListener("mousemove", onMouseMove);
+    window.addEventListener("mousemove", onMouseMove, { passive: true });
+
+    docs.forEach((doc) => {
+      try {
+        doc.removeEventListener("mousemove", onMouseMove);
+        doc.addEventListener("mousemove", onMouseMove, { passive: true });
+      } catch (e) {}
+    });
+  }
+
+  attachMouseMoveListeners();
+  setInterval(attachMouseMoveListeners, 2000);
 
   // ── KaTeX ────────────────────────────────────────────────
   async function cargarKaTeX() {
@@ -402,12 +584,10 @@
   // DEADMAN SWITCH: Solo funciona si CapsLock está hundido
   function attachClickToggle(p) {
     const clickTarget = p.b || p.elemento;
-    clickTarget.style.cursor = "pointer";
+    // Mantenemos el cursor por defecto (normal) para máximo sigilo y que no parezca un botón al pasar el mouse
     clickTarget.addEventListener("click", (e) => {
-      // No interceptar clicks en radios/inputs
-      if (e.target.closest("input, label, tr")) return;
-      // Deadman switch: require CapsLock key held
-      if (!window.__capsKeyHeld) return;
+      // No interceptar clicks en radios/inputs o si está en pausa por movimiento rápido
+      if (e.target.closest("input, label, tr") || isWorkerPaused) return;
       const div = p.elemento.__groq_div;
       if (!div || !div.innerHTML.trim()) return;
       const isOpen = div.dataset.clicked === "true";
@@ -421,6 +601,7 @@
   }
 
   function actualizarVisibilidad() {
+    if (isWorkerPaused) return;
     [document, getQuizDoc()].forEach((d) => {
       try {
         d.querySelectorAll(".__groq_justification_div").forEach((div) => {
@@ -451,7 +632,9 @@
     if (window.__groq_last_t && now - window.__groq_last_t < 300) return;
     window.__groq_last_t = now;
     window.__groq__.visible = !window.__groq__.visible;
-    actualizarVisibilidad();
+    if (!isWorkerPaused) {
+      actualizarVisibilidad();
+    }
   };
   window.__groq_toggle_fn__ = toggleX;
   window.addEventListener("keydown", toggleX);
@@ -524,6 +707,7 @@
       return;
     window.__helper_last_z__ = now;
     window.__helper_visible__ = !window.__helper_visible__;
+    if (isWorkerPaused) return;
     const visible = window.__helper_visible__;
     [document, getQuizDoc()].forEach((d) => {
       try {
