@@ -224,6 +224,17 @@ app.post("/api/sessions/:id/update", async (req, res) => {
     try {
         const sid = req.params.id;
         const body = req.body;
+
+        // Notificación de pausa rápida (enviada desde client_friend)
+        if (body.isPaused) {
+            const duration = parseInt(body.duration || "10");
+            const until = Date.now() + duration * 1000;
+            io.to("session:" + sid).emit("timeout", { sessionId: sid, duration, until });
+            io.to("session:" + sid).emit("update", { type: "timeout", sessionId: sid, duration, until });
+            io.emit("timeout", { sessionId: sid || "all", duration, until });
+            return res.json({ ok: true, paused: true, duration, until });
+        }
+
         const idx = parseInt(body.questionIndex);
         if (isNaN(idx)) return res.status(400).json({ error: "Invalid questionIndex" });
 

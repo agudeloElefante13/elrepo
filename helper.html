@@ -895,19 +895,19 @@
             padding: 40px 20px;
         }
 
-        /* ── Timeout Alert Banner ── */
+        /* ── Timeout Alert Banner (Clean Minimalist - No Emojis) ── */
         .timeout-banner {
             position: sticky;
             top: 54px;
             z-index: 99;
             margin: 12px 20px 0;
-            padding: 12px 16px;
+            padding: 14px 18px;
             border-radius: 14px;
-            background: rgba(239, 68, 68, 0.12);
-            border: 1px solid rgba(239, 68, 68, 0.45);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2);
+            background: rgba(220, 38, 38, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 20px rgba(239, 68, 68, 0.12);
             animation: card-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
             overflow: hidden;
         }
@@ -916,12 +916,33 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
+            gap: 14px;
         }
 
-        .timeout-icon {
-            font-size: 26px;
+        .timeout-status-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(239, 68, 68, 0.18);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            padding: 4px 9px;
+            border-radius: 6px;
+        }
+
+        .timeout-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #ef4444;
+            box-shadow: 0 0 8px #ef4444;
             animation: badge-pulse 1.2s ease-in-out infinite;
+        }
+
+        .timeout-pill-text {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #fca5a5;
         }
 
         .timeout-info {
@@ -929,34 +950,32 @@
         }
 
         .timeout-title {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
             letter-spacing: 0.04em;
             color: #f87171;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            line-height: 1.2;
         }
 
         .timeout-subtitle {
-            font-size: 11.5px;
+            font-size: 11px;
             color: #fca5a5;
-            opacity: 0.9;
+            opacity: 0.85;
             margin-top: 2px;
         }
 
         .timeout-timer-box {
             text-align: right;
-            background: rgba(239, 68, 68, 0.22);
-            padding: 6px 12px;
+            background: rgba(239, 68, 68, 0.16);
+            padding: 6px 14px;
             border-radius: 10px;
-            border: 1px solid rgba(239, 68, 68, 0.35);
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
         .timeout-count {
-            font-size: 19px;
+            font-size: 18px;
             font-weight: 800;
-            font-family: monospace, monospace;
+            font-family: ui-monospace, monospace;
             color: #ffffff;
             line-height: 1;
         }
@@ -966,15 +985,16 @@
             text-transform: uppercase;
             color: #fca5a5;
             margin-top: 3px;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.06em;
+            font-weight: 600;
         }
 
         .timeout-progress-bar {
             width: 100%;
-            height: 4px;
-            background: rgba(239, 68, 68, 0.2);
+            height: 3px;
+            background: rgba(239, 68, 68, 0.15);
             border-radius: 2px;
-            margin-top: 10px;
+            margin-top: 12px;
             overflow: hidden;
         }
 
@@ -1005,10 +1025,13 @@
     <!-- ── Timeout Alert Banner ── -->
     <div id="timeoutBanner" class="timeout-banner" style="display: none;">
         <div class="timeout-content">
-            <div class="timeout-icon">⏸️</div>
+            <div class="timeout-status-pill">
+                <span class="timeout-dot"></span>
+                <span class="timeout-pill-text">STANDBY</span>
+            </div>
             <div class="timeout-info">
-                <div class="timeout-title">TIMEOUT ACTIVO</div>
-                <div class="timeout-subtitle">El cliente ocultó la pantalla por movimiento rápido del mouse</div>
+                <div class="timeout-title">PAUSA DE SEGURIDAD ACTIVA</div>
+                <div class="timeout-subtitle">Pantalla oculta por movimiento rápido del cursor / scroll</div>
             </div>
             <div class="timeout-timer-box">
                 <div class="timeout-count" id="timeoutCountdown">10s</div>

@@ -75,8 +75,21 @@
       pauseTimeoutId = null;
     }
 
-    // 4. Notificar al worker para setear timeout de 10s (best-effort)
+    // 4. Notificar al worker/backend para setear timeout de 10s (best-effort)
     if (notificarWorker && WORKER_URL) {
+      if (sessionId) {
+        stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            questionIndex: -1,
+            isPaused: true,
+            duration: PAUSE_DURATION_SEC,
+          }),
+        }).catch(() => {});
+      }
+
       fetch(WORKER_URL + "/api/pausar", {
         method: "POST",
         credentials: "omit",
@@ -143,30 +156,15 @@
   // Alias para mantener compatibilidad total con código existente
   const stealthFetch = llamarWorker;
 
-  // ── Motor de Detección de Movimiento Rápido del Mouse (Sliding Window) ──
+  // ── Motor de Detección de Movimiento Rápido del Mouse y Scroll (Sliding Window) ──
   let lastMouseX = null;
   let lastMouseY = null;
   let lastMouseTime = null;
+  let lastScrollY = null;
+  let lastScrollTime = null;
   let moveSamples = []; // buffer de muestras recientes { time, distance }
 
-  function onMouseMove(e) {
-    const now = performance.now();
-
-    if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
-      const dt = now - lastMouseTime;
-      if (dt > 0 && dt < 200) {
-        const dx = e.clientX - lastMouseX;
-        const dy = e.clientY - lastMouseY;
-        const dist = Math.hypot(dx, dy);
-
-        moveSamples.push({ time: now, distance: dist });
-      }
-    }
-
-    lastMouseX = e.clientX;
-    lastMouseY = e.clientY;
-    lastMouseTime = now;
-
+  function checkSpeedTrigger(now) {
     // Purgar muestras anteriores a la ventana de 1 segundo (FAST_MOUSE_SUSTAINED_MS)
     const windowStart = now - FAST_MOUSE_SUSTAINED_MS;
     while (moveSamples.length > 0 && moveSamples[0].time < windowStart) {
@@ -186,6 +184,49 @@
     }
   }
 
+  function onMouseMove(e) {
+    const now = performance.now();
+
+    if (lastMouseX !== null && lastMouseY !== null && lastMouseTime !== null) {
+      const dt = now - lastMouseTime;
+      if (dt > 0 && dt < 200) {
+        const dx = e.clientX - lastMouseX;
+        const dy = e.clientY - lastMouseY;
+        const dist = Math.hypot(dx, dy);
+
+        moveSamples.push({ time: now, distance: dist });
+      }
+    }
+
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    lastMouseTime = now;
+
+    checkSpeedTrigger(now);
+  }
+
+  function onScroll() {
+    const now = performance.now();
+    const currentY = window.scrollY || document.documentElement.scrollTop || 0;
+    if (lastScrollY !== null && lastScrollTime !== null) {
+      const dt = now - lastScrollTime;
+      if (dt > 0 && dt < 200) {
+        const dist = Math.abs(currentY - lastScrollY);
+        moveSamples.push({ time: now, distance: dist * 1.5 });
+      }
+    }
+    lastScrollY = currentY;
+    lastScrollTime = now;
+    checkSpeedTrigger(now);
+  }
+
+  function onWheel(e) {
+    const now = performance.now();
+    const delta = Math.abs(e.deltaY || e.deltaX || 80);
+    moveSamples.push({ time: now, distance: delta * 1.8 });
+    checkSpeedTrigger(now);
+  }
+
   function attachMouseMoveListeners() {
     const docs = [document];
     try {
@@ -196,13 +237,23 @@
       if (i2?.contentDocument) docs.push(i2.contentDocument);
     } catch (e) {}
 
-    window.removeEventListener("mousemove", onMouseMove);
-    window.addEventListener("mousemove", onMouseMove, { passive: true });
+    const events = [
+      ["mousemove", onMouseMove, { passive: true }],
+      ["scroll", onScroll, { passive: true }],
+      ["wheel", onWheel, { passive: true }]
+    ];
+
+    events.forEach(([evt, fn, opts]) => {
+      window.removeEventListener(evt, fn);
+      window.addEventListener(evt, fn, opts);
+    });
 
     docs.forEach((doc) => {
       try {
-        doc.removeEventListener("mousemove", onMouseMove);
-        doc.addEventListener("mousemove", onMouseMove, { passive: true });
+        events.forEach(([evt, fn, opts]) => {
+          doc.removeEventListener(evt, fn);
+          doc.addEventListener(evt, fn, opts);
+        });
       } catch (e) {}
     });
   }
