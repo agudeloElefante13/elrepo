@@ -1454,7 +1454,8 @@ iwIDAQAB
         }
 
         // Mensajes nuevos
-        const msgs = data.mensajes?.[i] || [];
+        const allMsgs = data.mensajes?.[i] || [];
+        const msgs = allMsgs.filter(m => m.text && !m.text.startsWith("__TIMEOUT_"));
         if (msgs.length > currentMsgCounts[i]) {
           currentMsgCounts[i] = msgs.length;
           const chatMsgs = questions[i].elemento.__groq_chat_msgs;
