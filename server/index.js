@@ -29,6 +29,11 @@ pool.on("error", (err) => {
     console.error("Error inesperado en el pool de PostgreSQL:", err);
 });
 
+// Auto-migración de esquema si falta la columna active_indices
+pool.query("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_indices text;").catch((err) => {
+    console.error("Nota migración active_indices:", err.message);
+});
+
 // ── Express + Socket.io ─────────────────────────────────────
 const app = express();
 const server = http.createServer(app);
@@ -135,14 +140,17 @@ app.post("/api/sessions", async (req, res) => {
         let inserted = false;
         let attempts = 0;
 
+        const questions = body.questions || [];
+        const activeIndices = questions.map((q, i) => (q.index !== undefined && !isNaN(parseInt(q.index))) ? parseInt(q.index) : i);
+
         while (!inserted && attempts < 5) {
             attempts++;
             sessionId = generateId();
             try {
                 await pool.query(
-                    `INSERT INTO sessions (id, nombre, nombre_completo, page_html)
-                     VALUES ($1, $2, $3, $4)`,
-                    [sessionId, nombre, nombreCompleto, pageHTML]
+                    `INSERT INTO sessions (id, nombre, nombre_completo, page_html, active_indices)
+                     VALUES ($1, $2, $3, $4, $5)`,
+                    [sessionId, nombre, nombreCompleto, pageHTML, JSON.stringify(activeIndices)]
                 );
                 inserted = true;
             } catch (err) {
@@ -154,14 +162,14 @@ app.post("/api/sessions", async (req, res) => {
         }
 
         // Insertar preguntas en batch
-        const questions = body.questions || [];
         if (questions.length > 0) {
             const values = [];
             const params = [];
             questions.forEach((q, i) => {
                 const offset = i * 3;
+                const realIdx = (q.index !== undefined && !isNaN(parseInt(q.index))) ? parseInt(q.index) : i;
                 values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
-                params.push(sessionId, i, q.htmlRaw || "");
+                params.push(sessionId, realIdx, q.htmlRaw || "");
             });
             await pool.query(
                 `INSERT INTO questions (session_id, idx, html_raw) VALUES ${values.join(", ")}`,
@@ -170,9 +178,9 @@ app.post("/api/sessions", async (req, res) => {
         }
 
         // Notificar a los clientes conectados a esta sesión
-        io.to("session:" + sessionId).emit("update", { type: "session_created", sessionId });
+        io.to("session:" + sessionId).emit("update", { type: "session_created", sessionId, activeIndices });
 
-        res.json({ ok: true, total: questions.length, sessionId });
+        res.json({ ok: true, total: questions.length, sessionId, activeIndices });
     } catch (e) {
         console.error("Error creando sesión:", e);
         res.status(500).json({ error: e.message });
@@ -210,6 +218,7 @@ app.get("/api/sessions/:id", requireAdmin, async (req, res) => {
             nombre: sess.nombre,
             nombreCompleto: sess.nombre_completo,
             pageHTML: sess.page_html,
+            activeIndices: safeParseJson(sess.active_indices) || [],
             createdAt: sess.created_at,
             questions: questionsFormatted
         });
@@ -242,6 +251,55 @@ app.post("/api/sessions/:id/update", async (req, res) => {
             io.to("session:" + sid).emit("update", { type: "timeout", sessionId: sid, duration, until });
             io.emit("timeout", { sessionId: sid || "all", duration, until });
             return res.json({ ok: true, paused: true, duration, until });
+        }
+
+        // ── Soporte Multipágina: Inserción o actualización de preguntas de nueva página ──
+        if (body.questions && Array.isArray(body.questions)) {
+            const pageNum = parseInt(body.pageNum || "1");
+            const newQuestions = body.questions;
+            for (const q of newQuestions) {
+                const qIdx = parseInt(q.index);
+                if (isNaN(qIdx)) continue;
+                try {
+                    const existing = await pool.query(
+                        "SELECT id FROM questions WHERE session_id = $1 AND idx = $2",
+                        [sid, qIdx]
+                    );
+                    if (existing.rows.length > 0) {
+                        await pool.query(
+                            "UPDATE questions SET html_raw = $1 WHERE session_id = $2 AND idx = $3",
+                            [q.htmlRaw || "", sid, qIdx]
+                        );
+                    } else {
+                        await pool.query(
+                            "INSERT INTO questions (session_id, idx, html_raw) VALUES ($1, $2, $3)",
+                            [sid, qIdx, q.htmlRaw || ""]
+                        );
+                    }
+                } catch(err) {
+                    console.error("Error insertando pregunta multipágina:", err);
+                }
+            }
+
+            const activeIndices = newQuestions.map(q => parseInt(q.index)).filter(n => !isNaN(n));
+            try {
+                await pool.query("UPDATE sessions SET active_indices = $1 WHERE id = $2", [JSON.stringify(activeIndices), sid]);
+            } catch(err) {
+                console.error("Error guardando active_indices:", err);
+            }
+
+            const payload = {
+                type: "page_updated",
+                sessionId: sid,
+                pageNum,
+                activeIndices,
+                totalQuestions: newQuestions.length
+            };
+
+            io.to("session:" + sid).emit("update", payload);
+            io.emit("update", payload);
+
+            return res.json({ ok: true, pageUpdated: true, pageNum, activeIndices });
         }
 
         const idx = parseInt(body.questionIndex);

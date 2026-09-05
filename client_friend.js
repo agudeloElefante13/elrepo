@@ -1,7 +1,9 @@
 (async () => {
   if (window.__solverActivo) {
-
-    return;
+    if (typeof window.__helper_reScan === "function") {
+      window.__helper_reScan();
+      return;
+    }
   }
   window.__solverActivo = true;
 
@@ -26,7 +28,7 @@
   let isWorkerPaused = false;
   let pauseTimeoutId = null;
   let clientSocket = null;
-  let sessionId = null;
+  let sessionId = window.__helper_sessionId || null;
 
   function ocultarContenidoDOM() {
     getAllNestedDocuments().forEach((d) => {
@@ -756,10 +758,20 @@
     dot.style.opacity = s.op;
   }
 
-  // ── Toggle Z — ocultar/mostrar dots ──
+  // ── Toggle Z — ocultar/mostrar dots / Shift+Z: re-escanear página ──
   window.__helper_visible__ = true;
   const toggleZ = (e) => {
     if (e.key.toLowerCase() !== "z") return;
+    
+    // Shift + Z: Forzar re-escaneo manual de página
+    if (e.shiftKey) {
+      e.preventDefault();
+      if (typeof window.__helper_reScan === "function") {
+        window.__helper_reScan();
+      }
+      return;
+    }
+
     const now = Date.now();
     if (window.__helper_last_z__ && now - window.__helper_last_z__ < 300)
       return;
@@ -767,7 +779,7 @@
     window.__helper_visible__ = !window.__helper_visible__;
     if (isWorkerPaused) return;
     const visible = window.__helper_visible__;
-    [document, getQuizDoc()].forEach((d) => {
+    getAllNestedDocuments().forEach((d) => {
       try {
         d.querySelectorAll(".__helper_dot__").forEach(
           (dot) => (dot.style.display = visible ? "inline-block" : "none"),
@@ -914,23 +926,93 @@
   }
 
   function buscarEnunciado(fs) {
+    // 1. Si está dentro de un contenedor autosave
+    const container = fs.closest(".d2l-quiz-question-autosave-container");
+    if (container) {
+      const promptEl = container.querySelector(".d2l-q-prompt, .d2l-quiz-question-prompt, .preamble-container");
+      if (promptEl) return promptEl;
+      
+      const blocks = Array.from(container.querySelectorAll("d2l-html-block, .d2l-htmlblock-untrusted, p"));
+      const nonInputBlock = blocks.find(b => !b.closest("fieldset") && !b.querySelector("input[type=radio], input[type=checkbox]"));
+      if (nonInputBlock) return nonInputBlock;
+    }
+
+    // 2. Búsqueda hacia atrás entre hermanos
     let prev = fs.previousElementSibling;
     while (prev) {
       const tag = prev.tagName.toLowerCase();
       if (tag === "fieldset" || prev.classList.contains("d2l-quiz-question-autosave-container")) break;
       if (tag === "d2l-html-block") return prev;
       const inner = prev.querySelector("d2l-html-block");
-      if (inner && !prev.querySelector("input[type=radio]")) return inner;
+      if (inner && !prev.querySelector("input[type=radio], input[type=checkbox]")) return inner;
+      if (prev.classList.contains("d2l-q-prompt") || prev.classList.contains("d2l-quiz-question-prompt")) return prev;
+      if (!prev.querySelector("input") && (prev.textContent || "").trim().length > 10) {
+        return prev;
+      }
       prev = prev.previousElementSibling;
     }
     return null;
   }
 
-  // ═══════════════════════════════════════════════════════
-  // MAIN
-  // ═══════════════════════════════════════════════════════
+  function extraerNumeroPregunta(p, fallbackIndex) {
+    try {
+      const el = p.elemento;
+      const container = el.closest(".d2l-quiz-question-autosave-container") || el.parentElement || el;
+      
+      // 1. Buscar en encabezados del contenedor
+      const headerEl = container.querySelector(".d2l-q-title, .d2l-quiz-question-header-row, .vui-heading-3, h2, h3");
+      if (headerEl) {
+        const m = headerEl.textContent.match(/(?:pregunta|question|p\.)\s*(\d+)/i);
+        if (m && m[1]) return parseInt(m[1], 10) - 1;
+      }
 
-  await cargarKaTeX();
+      // 2. Buscar en hermanos anteriores
+      let prev = el.previousElementSibling;
+      while (prev) {
+        const m = prev.textContent.match(/(?:pregunta|question)\s*(\d+)/i);
+        if (m && m[1]) return parseInt(m[1], 10) - 1;
+        prev = prev.previousElementSibling;
+      }
+
+      // 3. Buscar en el legend
+      const legend = el.querySelector("legend") || container.querySelector("legend");
+      if (legend) {
+        const m = legend.textContent.match(/(?:pregunta|question)\s*(\d+)/i);
+        if (m && m[1]) return parseInt(m[1], 10) - 1;
+      }
+
+      // 4. Buscar en id de tarjeta o radios
+      const idMatch = (container.id || "").match(/(?:q_card_|q|question_?)(\d+)/i);
+      if (idMatch && idMatch[1] && parseInt(idMatch[1], 10) < 500) {
+        return parseInt(idMatch[1], 10) - 1;
+      }
+
+      const radio = el.querySelector("input[type=radio], input[type=checkbox]");
+      if (radio && radio.name) {
+        const m = radio.name.match(/(?:_q|q)(\d+)/i);
+        if (m && m[1] && parseInt(m[1], 10) < 500) {
+          return parseInt(m[1], 10) - 1;
+        }
+      }
+    } catch (e) {}
+    return fallbackIndex;
+  }
+
+  function detectarNumeroPagina(doc) {
+    try {
+      const pgInput = doc.querySelector("input[name='pg']");
+      if (pgInput && pgInput.value) {
+        const n = parseInt(pgInput.value, 10);
+        if (!isNaN(n)) return n;
+      }
+      const pageInfo = doc.querySelector(".d2l-pager, .pager, [class*='page-info']");
+      if (pageInfo) {
+        const m = pageInfo.textContent.match(/(?:p[aá]gina|page)\s*(\d+)/i);
+        if (m && m[1]) return parseInt(m[1], 10);
+      }
+    } catch(e) {}
+    return 1;
+  }
 
   const buscarPreguntas = (doc) => {
     const list = [];
@@ -941,7 +1023,7 @@
       doc.querySelectorAll(".d2l-quiz-question-autosave-container").forEach((c) => {
         const allBlocks = Array.from(c.querySelectorAll("d2l-html-block"));
         const b = allBlocks.find(
-          (block) => !block.closest("tr")?.querySelector("input[type=radio]"),
+          (block) => !block.closest("tr")?.querySelector("input[type=radio], input[type=checkbox]"),
         );
         list.push({ elemento: c, b });
       });
@@ -949,103 +1031,8 @@
     return list;
   };
 
-  let quizDoc = getQuizDoc();
-  let questions = [];
-
-  for (let attempt = 0; attempt < 4; attempt++) {
-    quizDoc = getQuizDoc();
-    questions = buscarPreguntas(quizDoc);
-    if (questions.length > 0) break;
-    if (attempt < 3) await new Promise((r) => setTimeout(r, 500));
-  }
-
-  if (questions.length === 0) {
-    window.__solverActivo = false;
-    return;
-  }
-
-  // Crear indicadores, divs de justificación, y click handlers
-  const dots = [];
-  const justDivs = [];
-  for (let i = 0; i < questions.length; i++) {
-    const p = questions[i];
-    dots.push(crearIndicador(p.elemento, quizDoc));
-    justDivs.push(crearDivJustificacion(p, quizDoc));
-    attachClickToggle(p);
-    setIndicador(dots[i], "detect");
-  }
-
-  // Extraer datos y enviar
-
-  const questionData = [];
-
-  for (let i = 0; i < questions.length; i++) {
-    const p = questions[i];
-
-    // Creamos un div virtual para encapsular todo el contenido de la pregunta
-    const virtualWrapper = document.createElement("div");
-    virtualWrapper.style.display = "flex";
-    virtualWrapper.style.flexDirection = "column";
-    virtualWrapper.style.gap = "15px";
-
-    // 1. Agregar el enunciado (generalmente está por fuera del contenedor de opciones)
-    if (p.b) {
-      const preambleContainer = document.createElement("div");
-      preambleContainer.className = "preamble-container";
-      preambleContainer.innerHTML =
-        p.b.getAttribute("html") || p.b.innerHTML || p.b.outerHTML || "";
-      virtualWrapper.appendChild(preambleContainer);
-    }
-
-    // 2. Agregar las opciones (fieldset o autosave-container)
-    const cloneElement = p.elemento.cloneNode(true);
-    // Remueve márgenes molestos de D2L que comprimen visualmente en el helper
-    cloneElement.style.margin = "0";
-    virtualWrapper.appendChild(cloneElement);
-
-    // 2.5 TRANSFORMAR d2l-html-block
-    // D2L usa Web Components que no renderizan en el Helper sin su JS.
-    // Convertimos <d2l-html-block html="..."> a <div> normales con su contenido
-    const d2lBlocks = virtualWrapper.querySelectorAll("d2l-html-block");
-    for (let block of d2lBlocks) {
-      const rawHtml = block.getAttribute("html") || block.innerHTML;
-      const divNormal = document.createElement("div");
-      divNormal.style.display = "inline-block";
-      divNormal.style.width = "100%";
-      divNormal.innerHTML = rawHtml;
-      block.parentNode.replaceChild(divNormal, block);
-    }
-
-    // 3. Convertir TODAS las imagenes del virtualWrapper a base 64 en paralelo
-    const imgs = virtualWrapper.querySelectorAll("img");
-    if (imgs.length > 0) {
-      const imgPromises = Array.from(imgs).map(async (img) => {
-        try {
-          const src = img.getAttribute("src");
-          if (src) {
-            const imgB64 = await fetchBase64(src);
-            if (imgB64 && imgB64.base64) {
-              img.setAttribute(
-                "src",
-                "data:" + imgB64.mimeType + ";base64," + imgB64.base64,
-              );
-            }
-          }
-        } catch (e) {}
-      });
-      await Promise.allSettled(imgPromises);
-    }
-
-    questionData.push({
-      index: i,
-      htmlRaw: virtualWrapper.innerHTML,
-    });
-    setIndicador(dots[i], "loading");
-  }
-
   // ── Extraer nombre automáticamente de D2L ──
   function extraerNombreD2L() {
-    // Buscar en todos los documentos posibles (top, iframes)
     const docs = [document];
     try {
       if (window.top?.document && window.top.document !== document)
@@ -1057,14 +1044,12 @@
     } catch (e) {}
 
     const intentos = [
-      // 1. Label "Usuario actual" → siguiente div con el nombre (MÁS CONFIABLE)
       (doc) => {
         const labels = doc.querySelectorAll("label.d2l-label-text");
         for (const label of labels) {
           if (/usuario actual/i.test(label.textContent)) {
             const div = label.nextElementSibling;
             if (div) {
-              // Formato: "JUAN ESTEBAN VELEZ MONTOYA (nombre de usuario: jevelezm1)"
               const text = div.textContent.trim();
               const match = text.match(/^(.+?)\s*\(nombre de usuario:/i);
               return match ? match[1].trim() : text.split("(")[0].trim();
@@ -1073,65 +1058,27 @@
         }
         return null;
       },
-      // 2. Web component de menú personal
-      (doc) =>
-        doc
-          .querySelector("d2l-navigation-link-personal-menu")
-          ?.getAttribute("text"),
-      (doc) =>
-        doc
-          .querySelector("d2l-navigation-link-personal-menu")
-          ?.textContent?.trim(),
-      // 3. Botón de perfil con aria-label
+      (doc) => doc.querySelector("d2l-navigation-link-personal-menu")?.getAttribute("text"),
+      (doc) => doc.querySelector("d2l-navigation-link-personal-menu")?.textContent?.trim(),
       (doc) => {
-        const btn = doc.querySelector(
-          '[data-testid="d2l-navigation-s-personal-menu"]',
-        );
-        return (
-          btn
-            ?.getAttribute("aria-label")
-            ?.replace(
-              /^(menú personal|personal menu|perfil|profile)\s*[-–:]\s*/i,
-              "",
-            ) || btn?.textContent?.trim()
-        );
+        const btn = doc.querySelector('[data-testid="d2l-navigation-s-personal-menu"]');
+        return btn?.getAttribute("aria-label")?.replace(/^(menú personal|personal menu|perfil|profile)\s*[-–:]\s*/i, "") || btn?.textContent?.trim();
       },
-      // 4. Dropdown del menú personal
-      (doc) =>
-        doc
-          .querySelector(".d2l-navigation-s-personal-menu-text")
-          ?.textContent?.trim(),
-      (doc) =>
-        doc
-          .querySelector(".d2l-navigation-s-header-personal-menu-text")
-          ?.textContent?.trim(),
-      // 5. Cualquier elemento con clase que contenga "personal-menu"
+      (doc) => doc.querySelector(".d2l-navigation-s-personal-menu-text")?.textContent?.trim(),
+      (doc) => doc.querySelector(".d2l-navigation-s-header-personal-menu-text")?.textContent?.trim(),
       (doc) => {
         const el = doc.querySelector('[class*="personal-menu"]');
         const text = el?.getAttribute("text") || el?.textContent?.trim();
         return text && text.length > 2 && text.length < 80 ? text : null;
       },
-      // 6. Buscar en el dropdown abierto
-      (doc) =>
-        doc
-          .querySelector(".d2l-dropdown-content-pointer .d2l-profile-card-name")
-          ?.textContent?.trim(),
-      // 7. Nombre en la barra superior como texto
+      (doc) => doc.querySelector(".d2l-dropdown-content-pointer .d2l-profile-card-name")?.textContent?.trim(),
       (doc) => {
         const nav = doc.querySelector("d2l-navigation, .d2l-navigation");
         if (!nav) return null;
         const els = nav.querySelectorAll("span, div, button");
         for (const el of els) {
           const t = el.textContent?.trim();
-          if (
-            t &&
-            t.length > 3 &&
-            t.length < 50 &&
-            t.includes(" ") &&
-            !/home|inicio|quiz|assignment|content|grades|menú|menu|notification|help/i.test(
-              t,
-            )
-          ) {
+          if (t && t.length > 3 && t.length < 50 && t.includes(" ") && !/home|inicio|quiz|assignment|content|grades|menú|menu|notification|help/i.test(t)) {
             return t;
           }
         }
@@ -1143,10 +1090,7 @@
       for (const intento of intentos) {
         try {
           const resultado = intento(doc);
-          if (resultado && resultado.trim().length > 2) {
-
-            return resultado.trim();
-          }
+          if (resultado && resultado.trim().length > 2) return resultado.trim();
         } catch (e) {}
       }
     }
@@ -1164,90 +1108,6 @@
       .join("");
   }
 
-  let nombreCompleto = extraerNombreD2L();
-  if (!nombreCompleto) {
-    // Input disimulado en el footer del quiz, parece metadata de D2L (con timeout de 3s)
-    nombreCompleto = await new Promise((resolve) => {
-      const targetDoc = getQuizDoc();
-      const footer = targetDoc.createElement("div");
-      footer.style.cssText =
-        "padding:6px 10px;margin-top:12px;font-size:10px;color:#999;font-family:'D2L',system-ui,sans-serif;display:flex;align-items:center;gap:6px;border-top:1px solid #e5e5e5;";
-      const lbl = targetDoc.createElement("span");
-      lbl.textContent = "Session user:";
-      const inp = targetDoc.createElement("input");
-      inp.style.cssText =
-        "border:none;border-bottom:1px solid #ccc;background:transparent;font-size:10px;color:#777;font-family:inherit;outline:none;padding:1px 4px;width:140px;";
-      inp.placeholder = "full name";
-      footer.appendChild(lbl);
-      footer.appendChild(inp);
-      targetDoc.body.appendChild(footer);
-
-      const timeoutId = setTimeout(() => {
-        if (footer.parentNode) footer.remove();
-        resolve("Anónimo");
-      }, 3000);
-
-      inp.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && inp.value.trim()) {
-          clearTimeout(timeoutId);
-          footer.remove();
-          resolve(inp.value.trim());
-        }
-      });
-      inp.addEventListener("blur", () => {
-        if (inp.value.trim()) {
-          clearTimeout(timeoutId);
-          footer.remove();
-          resolve(inp.value.trim());
-        }
-      });
-    });
-  }
-  if (!nombreCompleto) nombreCompleto = "Anónimo";
-
-  const nombreCodigo = generarCodigo(nombreCompleto);
-
-  // Extraer HTML completo para debugging
-  let pageHTML = "";
-  try {
-    let parentClone = document.documentElement.cloneNode(true);
-
-    // 1. Inyectar <base> para que el CSS / recursos estáticos (que tienen URLs relativas) carguen desde el D2L original
-    let base = document.createElement("base");
-    base.href = window.location.origin;
-    const head = parentClone.querySelector("head");
-    if (head) head.prepend(base);
-
-    // 2. Si D2L metió el quiz en un iframe, el Iframe original vendrá hueco en el clone. Vamos a empaquetarlo.
-    const qDoc = getQuizDoc();
-    if (qDoc && qDoc !== document) {
-      // Buscar el iframe dentro del clon que corresponda
-      const iframeClone = parentClone.querySelector(
-        'iframe[name="contentFrame"], iframe.d2l-iframe, iframe',
-      );
-      if (iframeClone && qDoc.documentElement) {
-        let innerClone = qDoc.documentElement.cloneNode(true);
-        let innerBase = document.createElement("base");
-        innerBase.href = window.location.origin;
-        const innerHead = innerClone.querySelector("head");
-        if (innerHead) innerHead.prepend(innerBase);
-
-        iframeClone.removeAttribute("src"); // Evitar que redireccione o dé error
-        // Inyectamos todo el sub-html dentro del atributo srcdoc
-        iframeClone.setAttribute("srcdoc", innerClone.outerHTML);
-        // Expandimos el iframe para que esté completamente visible sin scroll absurdo
-        iframeClone.style.height = "2500px";
-      }
-    }
-
-    pageHTML = "<!DOCTYPE html>\n" + parentClone.outerHTML;
-
-  } catch (e) {
-    pageHTML = "<!-- Error extrayendo HTML: " + e.message + " -->";
-
-  }
-
-  // Llave Pública RSA (Segura para distribuir)
   const PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzqX5C6WgrqbP37PDmoUA
 OTPEPAfwMfhS0UV/Yei5YOTKjSz5ARcAIQnOaYdHtrCtRs/y2ctfZBbo4fPZoGYo
@@ -1262,13 +1122,10 @@ iwIDAQAB
     const b64 = pem.replace(/(-----(BEGIN|END) (PUBLIC|PRIVATE) KEY-----|\n|\r)/g, '');
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes.buffer;
   }
 
-  // Encriptación Asimétrica de Grado Militar
   async function encryptRSA(text) {
     if (!text) return text;
     try {
@@ -1284,50 +1141,49 @@ iwIDAQAB
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       return "RSA:" + btoa(binary);
     } catch (e) {
-      // Fallback a ofuscación si el navegador (modo inseguro) no soporta Web Crypto
       return "OBS:" + btoa(encodeURIComponent(text)).split('').reverse().join('');
     }
   }
 
-  // Crear sesión
-  try {
-    const encNombre = await encryptRSA(nombreCodigo);
-    const encNombreCompleto = await encryptRSA(nombreCompleto.trim());
+  function extraerPageHTML() {
+    try {
+      let parentClone = document.documentElement.cloneNode(true);
+      let base = document.createElement("base");
+      base.href = window.location.origin;
+      const head = parentClone.querySelector("head");
+      if (head) head.prepend(base);
 
-    const postSessionData = async (withHtml) => {
-      return await stealthFetch(WORKER_URL + "/d2l/api/lp/1.9/enrollments/myenrollments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          questions: questionData,
-          nombre: encNombre,
-          nombreCompleto: encNombreCompleto,
-          pageHTML: withHtml ? pageHTML : null,
-        }),
-      });
-    };
-
-    let res = await postSessionData(true);
-    if (!res.ok && pageHTML) {
-      // Fallback: si falla (ej. payload pesado o 413), reintentar sin pageHTML
-      res = await postSessionData(false);
+      const qDoc = getQuizDoc();
+      if (qDoc && qDoc !== document) {
+        const iframeClone = parentClone.querySelector('iframe[name="contentFrame"], iframe.d2l-iframe, iframe');
+        if (iframeClone && qDoc.documentElement) {
+          let innerClone = qDoc.documentElement.cloneNode(true);
+          let innerBase = document.createElement("base");
+          innerBase.href = window.location.origin;
+          const innerHead = innerClone.querySelector("head");
+          if (innerHead) innerHead.prepend(innerBase);
+          iframeClone.removeAttribute("src");
+          iframeClone.setAttribute("srcdoc", innerClone.outerHTML);
+          iframeClone.style.height = "2500px";
+        }
+      }
+      return "<!DOCTYPE html>\n" + parentClone.outerHTML;
+    } catch (e) {
+      return "<!-- Error extrayendo HTML: " + e.message + " -->";
     }
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    sessionId = data.sessionId;
-  } catch (e) {
-    dots.forEach((d) => setIndicador(d, "error"));
-    window.__solverActivo = false;
-    return;
   }
 
-  // ── Polling — detecta respuestas, justificaciones Y mensajes ──
-
-  const currentAnswers = new Array(questions.length).fill(null);
-  const currentJusts = new Array(questions.length).fill("");
-  const currentGraficaCodes = new Array(questions.length).fill("");
-  const currentMsgCounts = new Array(questions.length).fill(0);
-  const currentAcciones = new Array(questions.length).fill(null);
+  // ── Variables de Estado de la Página Actual ──
+  let currentQuestions = [];
+  let currentDots = [];
+  let currentJustDivs = [];
+  const currentAnswers = {};
+  const currentJusts = {};
+  const currentGraficaCodes = {};
+  const currentMsgCounts = {};
+  const currentAcciones = {};
+  let isScanning = false;
+  let lastScannedSignatures = "";
 
   function renderMessages(chatMsgsEl, mensajes) {
     chatMsgsEl.innerHTML = "";
@@ -1346,7 +1202,7 @@ iwIDAQAB
   }
 
   async function sendMessage(questionIndex, text) {
-    if (!text.trim()) return;
+    if (!text.trim() || !sessionId) return;
     try {
       await stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
         method: "POST",
@@ -1357,148 +1213,409 @@ iwIDAQAB
           mensaje: { from: "client", text: text.trim() },
         }),
       });
-    } catch (e) {
+    } catch (e) {}
+  }
 
+  function attachChatHandlers() {
+    for (let i = 0; i < currentQuestions.length; i++) {
+      const p = currentQuestions[i];
+      const chatInput = p.elemento.__groq_chat_input;
+      const chatMsgs = p.elemento.__groq_chat_msgs;
+      if (!chatInput) continue;
+
+      const doSend = () => {
+        const text = chatInput.value;
+        if (!text.trim()) return;
+        chatInput.value = "";
+        sendMessage(p.globalIndex, text);
+        const bubble = document.createElement("div");
+        bubble.style.cssText =
+          "padding:2px 4px;margin:1px 0;border-radius:2px;font-size:9px;line-height:1.2;max-width:85%;word-break:break-word;background:transparent;color:rgba(0,0,0,0.25);margin-left:auto;text-align:right;";
+        bubble.textContent = text;
+        chatMsgs.appendChild(bubble);
+        chatMsgs.scrollTop = chatMsgs.scrollHeight;
+        currentMsgCounts[p.globalIndex] = (currentMsgCounts[p.globalIndex] || 0) + 1;
+      };
+
+      chatInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          doSend();
+        }
+      });
+      const sendBtn = chatInput.parentElement.querySelector("button");
+      if (sendBtn) sendBtn.addEventListener("click", doSend);
     }
   }
 
-  // Attach chat send handlers
-  for (let i = 0; i < questions.length; i++) {
-    const p = questions[i];
-    const chatInput = p.elemento.__groq_chat_input;
-    const chatMsgs = p.elemento.__groq_chat_msgs;
-    if (!chatInput) continue;
-
-    const doSend = () => {
-      const text = chatInput.value;
-      if (!text.trim()) return;
-      chatInput.value = "";
-      sendMessage(i, text);
-      // Optimistic render
-      const bubble = document.createElement("div");
-      bubble.style.cssText =
-        "padding:2px 4px;margin:1px 0;border-radius:2px;font-size:9px;line-height:1.2;max-width:85%;word-break:break-word;background:transparent;color:rgba(0,0,0,0.25);margin-left:auto;text-align:right;";
-      bubble.textContent = text;
-      chatMsgs.appendChild(bubble);
-      chatMsgs.scrollTop = chatMsgs.scrollHeight;
-      currentMsgCounts[i]++;
-    };
-
-    chatInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        doSend();
-      }
-    });
-    const sendBtn = chatInput.parentElement.querySelector("button");
-    if (sendBtn) sendBtn.addEventListener("click", doSend);
-  }
-
   const poll = async () => {
+    if (!sessionId) return;
     try {
       const res = await stealthFetch(WORKER_URL + "/d2l/api/le/1.67/grades/values?s=" + sessionId);
       if (!res.ok) return;
       const data = await res.json();
-      if (data.error) return;
+      if (data.error || !data.answers) return;
 
-      for (let i = 0; i < data.answers.length; i++) {
-        const letra = data.answers[i];
-        const just = data.justificaciones?.[i] || "";
+      for (let i = 0; i < currentQuestions.length; i++) {
+        const p = currentQuestions[i];
+        const gIdx = p.globalIndex;
+        const dot = currentDots[i];
+        const jDiv = currentJustDivs[i];
+
+        const letra = data.answers[gIdx];
+        const just = data.justificaciones?.[gIdx] || "";
+        const accion = data.accionesDinamicas?.[gIdx] || null;
 
         // Respuesta nueva o cambió
-        if (letra && letra !== currentAnswers[i]) {
-          currentAnswers[i] = letra;
-          marcar(questions[i], letra);
-          setIndicador(dots[i], "done");
-
+        if (letra && letra !== currentAnswers[gIdx]) {
+          currentAnswers[gIdx] = letra;
+          marcar(p, letra);
+          if (dot) setIndicador(dot, "done");
         }
 
         // Accion Dinamica (Genérica del Helper v2)
-        const accion = data.accionesDinamicas?.[i] || null;
-        if (
-          accion &&
-          JSON.stringify(accion) !== JSON.stringify(currentAcciones[i])
-        ) {
-          currentAcciones[i] = accion;
+        if (accion && JSON.stringify(accion) !== JSON.stringify(currentAcciones[gIdx])) {
+          currentAcciones[gIdx] = accion;
           try {
-            const targetWrapper = questions[i].elemento;
+            const targetWrapper = p.elemento;
             if (accion.type === "input") {
               const inputs = Array.from(
-                targetWrapper.querySelectorAll(
-                  "input[type=radio], input[type=checkbox]",
-                ),
+                targetWrapper.querySelectorAll("input[type=radio], input[type=checkbox]")
               );
               if (inputs[accion.idx]) {
-                inputs[accion.idx].checked = accion.checked;
-                // D2L often requires a click event to trigger save mechanism
-                inputs[accion.idx].click();
+                try {
+                  inputs[accion.idx].checked = accion.checked;
+                  inputs[accion.idx].dispatchEvent(new Event("change", { bubbles: true }));
+                  inputs[accion.idx].click();
+                } catch (clickErr) {
+                  inputs[accion.idx].checked = accion.checked;
+                  inputs[accion.idx].dispatchEvent(new Event("change", { bubbles: true }));
+                }
               }
             } else if (accion.type === "select") {
-              const selects = Array.from(
-                targetWrapper.querySelectorAll("select"),
-              );
+              const selects = Array.from(targetWrapper.querySelectorAll("select"));
               if (selects[accion.idx]) {
                 selects[accion.idx].value = accion.value;
-                selects[accion.idx].dispatchEvent(
-                  new Event("change", { bubbles: true }),
-                );
+                selects[accion.idx].dispatchEvent(new Event("change", { bubbles: true }));
               }
             }
-            setIndicador(dots[i], "done");
-
-          } catch (e) {
-
-          }
+            if (dot) setIndicador(dot, "done");
+          } catch (e) {}
         }
 
         // Justificación nueva o cambió
-        if (just !== currentJusts[i]) {
-          currentJusts[i] = just;
-          if (just) {
-            const div = justDivs[i];
-            const justContent = div.querySelector(".__groq_just_content");
+        if (just !== currentJusts[gIdx]) {
+          currentJusts[gIdx] = just;
+          if (just && jDiv) {
+            const justContent = jDiv.querySelector(".__groq_just_content");
             const htmlContent = prepararHTML(just);
             if (justContent) {
               justContent.innerHTML =
                 "<div style='font-family:system-ui,sans-serif;font-size:12px;line-height:1.8;'>" +
                 htmlContent +
                 "</div>";
-              // Restauramos el "poquito de sobra" visual de 40px que estaba bien
               justContent.style.paddingBottom = "40px";
             }
-            renderKaTeX(div);
-            setTimeout(() => renderKaTeX(div), 300);
-            setTimeout(() => renderKaTeX(div), 800);
+            renderKaTeX(jDiv);
+            setTimeout(() => renderKaTeX(jDiv), 300);
+            setTimeout(() => renderKaTeX(jDiv), 800);
           }
         }
 
         // Mensajes nuevos
-        const allMsgs = data.mensajes?.[i] || [];
-        const msgs = allMsgs.filter(m => m.text && !m.text.startsWith("__TIMEOUT_"));
-        if (msgs.length > currentMsgCounts[i]) {
-          currentMsgCounts[i] = msgs.length;
-          const chatMsgs = questions[i].elemento.__groq_chat_msgs;
+        const allMsgs = data.mensajes?.[gIdx] || [];
+        const msgs = allMsgs.filter((m) => m.text && !m.text.startsWith("__TIMEOUT_"));
+        if (msgs.length > (currentMsgCounts[gIdx] || 0)) {
+          currentMsgCounts[gIdx] = msgs.length;
+          const chatMsgs = p.elemento.__groq_chat_msgs;
           if (chatMsgs) renderMessages(chatMsgs, msgs);
         }
 
         // Gráfica nueva o cambió
-        const graficaCode = data.graficaCodes?.[i] || "";
-        if (graficaCode && graficaCode !== currentGraficaCodes[i]) {
-          currentGraficaCodes[i] = graficaCode;
-          // Mostrar indicador visual en el dot (color azul)
-          // Si ya está en 'done', el azul de la gráfica tiene prioridad visual o se puede alternar
-          // Aquí simplemente ponemos el estado 'graph'
-          setIndicador(dots[i], "graph");
-
+        const graficaCode = data.graficaCodes?.[gIdx] || "";
+        if (graficaCode && graficaCode !== currentGraficaCodes[gIdx]) {
+          currentGraficaCodes[gIdx] = graficaCode;
+          if (dot) setIndicador(dot, "graph");
         }
       }
-    } catch (e) {
-
-    }
+    } catch (e) {}
   };
 
-  // ── Socket.io Realtime — actualizaciones instantáneas ──
+  let cachedNombreCodigo = null;
+  let cachedNombreCompleto = null;
+
+  async function escanearYProcesarPagina(esReScan = false) {
+    if (isScanning) return;
+    isScanning = true;
+
+    try {
+      let quizDoc = getQuizDoc();
+      let foundQuestions = [];
+
+      for (let attempt = 0; attempt < 4; attempt++) {
+        quizDoc = getQuizDoc();
+        foundQuestions = buscarPreguntas(quizDoc);
+        if (foundQuestions.length > 0) break;
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 400));
+      }
+
+      if (foundQuestions.length === 0) {
+        isScanning = false;
+        return;
+      }
+
+      for (let i = 0; i < foundQuestions.length; i++) {
+        foundQuestions[i].globalIndex = extraerNumeroPregunta(foundQuestions[i], i);
+      }
+
+      const signature = foundQuestions.map(q => q.globalIndex + ":" + (q.b ? q.b.textContent?.substring(0, 30) : "")).join("|");
+      if (esReScan && signature === lastScannedSignatures && currentQuestions.length > 0 && currentQuestions[0].elemento?.isConnected) {
+        isScanning = false;
+        return;
+      }
+      lastScannedSignatures = signature;
+
+      if (esReScan) {
+        getAllNestedDocuments().forEach(d => {
+          try {
+            d.querySelectorAll(".__helper_dot__, .__groq_justification_div").forEach(el => el.remove());
+          } catch(e) {}
+        });
+      }
+
+      currentQuestions = foundQuestions;
+      currentDots = [];
+      currentJustDivs = [];
+
+      for (let i = 0; i < currentQuestions.length; i++) {
+        const p = currentQuestions[i];
+        const dot = crearIndicador(p.elemento, quizDoc);
+        const jDiv = crearDivJustificacion(p, quizDoc);
+        currentDots.push(dot);
+        currentJustDivs.push(jDiv);
+        attachClickToggle(p);
+        setIndicador(dot, "detect");
+      }
+
+      const questionData = [];
+      for (let i = 0; i < currentQuestions.length; i++) {
+        const p = currentQuestions[i];
+        const virtualWrapper = document.createElement("div");
+        virtualWrapper.style.display = "flex";
+        virtualWrapper.style.flexDirection = "column";
+        virtualWrapper.style.gap = "15px";
+
+        if (p.b) {
+          const preambleContainer = document.createElement("div");
+          preambleContainer.className = "preamble-container";
+          preambleContainer.innerHTML = p.b.getAttribute("html") || p.b.innerHTML || p.b.outerHTML || "";
+          virtualWrapper.appendChild(preambleContainer);
+        }
+
+        const cloneElement = p.elemento.cloneNode(true);
+        cloneElement.style.margin = "0";
+        virtualWrapper.appendChild(cloneElement);
+
+        const d2lBlocks = virtualWrapper.querySelectorAll("d2l-html-block");
+        for (let block of d2lBlocks) {
+          const rawHtml = block.getAttribute("html") || block.innerHTML;
+          const divNormal = document.createElement("div");
+          divNormal.style.display = "inline-block";
+          divNormal.style.width = "100%";
+          divNormal.innerHTML = rawHtml;
+          block.parentNode.replaceChild(divNormal, block);
+        }
+
+        const imgs = virtualWrapper.querySelectorAll("img");
+        if (imgs.length > 0) {
+          const imgPromises = Array.from(imgs).map(async (img) => {
+            try {
+              const src = img.getAttribute("src");
+              if (src) {
+                const imgB64 = await fetchBase64(src);
+                if (imgB64 && imgB64.base64) {
+                  img.setAttribute("src", "data:" + imgB64.mimeType + ";base64," + imgB64.base64);
+                }
+              }
+            } catch (e) {}
+          });
+          await Promise.allSettled(imgPromises);
+        }
+
+        questionData.push({
+          index: p.globalIndex,
+          htmlRaw: virtualWrapper.innerHTML,
+        });
+        setIndicador(currentDots[i], "loading");
+      }
+
+      const pageNum = detectarNumeroPagina(quizDoc);
+
+      if (sessionId) {
+        try {
+          await stealthFetch(WORKER_URL + "/d2l/api/le/1.67/quizzing/attempts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId,
+              questions: questionData,
+              pageNum,
+            }),
+          });
+          currentDots.forEach((d) => setIndicador(d, "detect"));
+        } catch (e) {
+          currentDots.forEach((d) => setIndicador(d, "error"));
+        }
+      } else {
+        if (!cachedNombreCompleto) {
+          cachedNombreCompleto = extraerNombreD2L();
+          if (!cachedNombreCompleto) {
+            cachedNombreCompleto = await new Promise((resolve) => {
+              const targetDoc = getQuizDoc();
+              const footer = targetDoc.createElement("div");
+              footer.style.cssText =
+                "padding:6px 10px;margin-top:12px;font-size:10px;color:#999;font-family:'D2L',system-ui,sans-serif;display:flex;align-items:center;gap:6px;border-top:1px solid #e5e5e5;";
+              const lbl = targetDoc.createElement("span");
+              lbl.textContent = "Session user:";
+              const inp = targetDoc.createElement("input");
+              inp.style.cssText =
+                "border:none;border-bottom:1px solid #ccc;background:transparent;font-size:10px;color:#777;font-family:inherit;outline:none;padding:1px 4px;width:140px;";
+              inp.placeholder = "full name";
+              footer.appendChild(lbl);
+              footer.appendChild(inp);
+              targetDoc.body.appendChild(footer);
+
+              const timeoutId = setTimeout(() => {
+                if (footer.parentNode) footer.remove();
+                resolve("Anónimo");
+              }, 3000);
+
+              inp.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" && inp.value.trim()) {
+                  clearTimeout(timeoutId);
+                  footer.remove();
+                  resolve(inp.value.trim());
+                }
+              });
+              inp.addEventListener("blur", () => {
+                if (inp.value.trim()) {
+                  clearTimeout(timeoutId);
+                  footer.remove();
+                  resolve(inp.value.trim());
+                }
+              });
+            });
+          }
+          if (!cachedNombreCompleto) cachedNombreCompleto = "Anónimo";
+          cachedNombreCodigo = generarCodigo(cachedNombreCompleto);
+        }
+
+        const pageHTML = extraerPageHTML();
+        const encNombre = await encryptRSA(cachedNombreCodigo);
+        const encNombreCompleto = await encryptRSA(cachedNombreCompleto.trim());
+
+        const postSessionData = async (withHtml) => {
+          return await stealthFetch(WORKER_URL + "/d2l/api/lp/1.9/enrollments/myenrollments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              questions: questionData,
+              nombre: encNombre,
+              nombreCompleto: encNombreCompleto,
+              pageHTML: withHtml ? pageHTML : null,
+            }),
+          });
+        };
+
+        let res = await postSessionData(true);
+        if (!res.ok && pageHTML) {
+          res = await postSessionData(false);
+        }
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        sessionId = data.sessionId;
+        window.__helper_sessionId = sessionId;
+        currentDots.forEach((d) => setIndicador(d, "detect"));
+
+        if (clientSocket && clientSocket.connected) {
+          clientSocket.emit("join", sessionId);
+        }
+      }
+
+      attachChatHandlers();
+      poll();
+
+    } catch (e) {
+      currentDots.forEach((d) => setIndicador(d, "error"));
+    } finally {
+      isScanning = false;
+    }
+  }
+
+  window.__helper_reScan = () => escanearYProcesarPagina(true);
+
+  function iniciarVigilantePagina() {
+    let lastPgVal = "";
+
+    setInterval(() => {
+      const qDoc = getQuizDoc();
+      const pgInput = qDoc.querySelector("input[name='pg']");
+      const currentPgVal = pgInput ? pgInput.value : "";
+
+      if (currentPgVal && lastPgVal && currentPgVal !== lastPgVal) {
+        lastPgVal = currentPgVal;
+        escanearYProcesarPagina(true);
+        return;
+      }
+      if (currentPgVal) lastPgVal = currentPgVal;
+
+      if (currentQuestions.length > 0 && currentQuestions[0].elemento && !currentQuestions[0].elemento.isConnected) {
+        escanearYProcesarPagina(true);
+        return;
+      }
+
+      const domQuestions = buscarPreguntas(qDoc);
+      if (domQuestions.length > 0 && currentQuestions.length === 0) {
+        escanearYProcesarPagina(true);
+      }
+    }, 1200);
+
+    const interceptarClicksNav = (doc) => {
+      try {
+        doc.addEventListener(
+          "click",
+          (e) => {
+            const target = e.target.closest(
+              "button, a, input[type=button], d2l-button, [class*='button'], [id*='Next'], [id*='Prev'], [id*='btn']",
+            );
+            if (target) {
+              const txt = (target.textContent || target.value || target.getAttribute("text") || "").toLowerCase();
+              if (
+                /siguiente|next|anterior|prev|página|page|guardar|ir a/i.test(txt) ||
+                target.id?.includes("Next") ||
+                target.id?.includes("Prev")
+              ) {
+                setTimeout(() => escanearYProcesarPagina(true), 800);
+                setTimeout(() => escanearYProcesarPagina(true), 2000);
+              }
+            }
+          },
+          true,
+        );
+      } catch (e) {}
+    };
+
+    getAllNestedDocuments().forEach(interceptarClicksNav);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // INICIALIZACIÓN
+  // ═══════════════════════════════════════════════════════
+
+  await cargarKaTeX();
+
+  // Socket.io Realtime — actualizaciones instantáneas
   if (BACKEND_URL && BACKEND_URL !== "DEPLOY_BACKEND_URL") {
     try {
       await cargarSocketIO();
@@ -1533,8 +1650,10 @@ iwIDAQAB
     } catch (e) {}
   }
 
-  // Poll como fallback (lento — Realtime maneja lo rápido)
+  iniciarVigilantePagina();
+  await escanearYProcesarPagina(false);
+
+  // Poll fallback cada 10 segundos
   setInterval(poll, 10000);
-  poll(); // Primera ejecución inmediata
 
 })();

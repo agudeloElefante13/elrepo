@@ -1387,6 +1387,9 @@ Problema a resolver:
                         const end = data?.graceEndTime || data?.until;
                         const dur = data?.duration || (data?.graceDurationMs ? data.graceDurationMs / 1000 : 10);
                         showTimeoutAlert(dur, end);
+                    } else if (data && (data.type === "page_updated" || data.type === "session_created")) {
+                        loadFullSession();
+                        playPing();
                     } else {
                         pollStatus();
                         pollChat();
@@ -1540,17 +1543,48 @@ Problema a resolver:
             const answered = sess.questions.filter(q => q.respuesta).length;
             updateProgress(answered, sess.questions.length);
 
-            sess.questions.forEach((q, idx) => {
+            const activeIndices = Array.isArray(sess.activeIndices) ? sess.activeIndices : [];
+            const hasPagingInfo = activeIndices.length > 0;
+
+            sess.questions.forEach((q, loopIdx) => {
+                const qIdx = (q.index !== undefined && !isNaN(parseInt(q.index))) ? parseInt(q.index) : loopIdx;
+                const isActive = !hasPagingInfo || activeIndices.includes(qIdx);
+
                 const card = document.createElement("div");
                 card.className = "question-card" + (q.respuesta ? " answered" : "");
-                card.id = "q-" + idx;
-                card.style.animationDelay = (idx * 0.06) + "s";
+                card.id = "q-" + qIdx;
+                card.style.animationDelay = (loopIdx * 0.06) + "s";
+
+                if (!isActive) {
+                    card.style.opacity = "0.78";
+                    card.style.borderLeft = "3px solid #ef4444";
+                } else if (hasPagingInfo) {
+                    card.style.borderLeft = "3px solid var(--accent-green)";
+                }
 
                 // Header
                 const header = document.createElement("div");
                 header.className = "question-header";
-                header.innerHTML = '<div class="question-number">' + (idx + 1) + '</div><span class="question-label">Pregunta ' + (idx + 1) + '</span>';
+                
+                let badgeHtml = '';
+                if (hasPagingInfo) {
+                    if (isActive) {
+                        badgeHtml = '<span style="background:var(--accent-green-bg); color:var(--accent-green); border:1px solid var(--accent-green-border); font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; margin-left:auto;">● EN PANTALLA (ACTIVA)</span>';
+                    } else {
+                        badgeHtml = '<span style="background:rgba(239, 68, 68, 0.15); color:#ef4444; border:1px solid rgba(239, 68, 68, 0.3); font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; margin-left:auto;">🔒 PÁGINA ANTERIOR (BLOQUEADA)</span>';
+                    }
+                }
+
+                header.innerHTML = '<div class="question-number">' + (qIdx + 1) + '</div><span class="question-label">Pregunta ' + (qIdx + 1) + '</span>' + badgeHtml;
                 card.appendChild(header);
+
+                // Warning banner if question is on a previous locked page
+                if (!isActive) {
+                    const lockAlert = document.createElement("div");
+                    lockAlert.style.cssText = "font-size:11px; color:#f87171; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.2); padding:6px 10px; border-radius:6px; margin-bottom:12px; display:flex; align-items:center; gap:6px;";
+                    lockAlert.innerHTML = '<span>🔒</span><span><strong>Página anterior entregada:</strong> Esta pregunta ya fue pasada en el quiz. Las respuestas están bloqueadas para evitar selecciones accidentales.</span>';
+                    card.appendChild(lockAlert);
+                }
 
                 // Enunciado Crudo (Raw HTML importado directo desde D2L)
                 const rawContainer = document.createElement("div");
@@ -1564,27 +1598,34 @@ Problema a resolver:
                     if (el.tagName === 'TABLE') el.style.width = "100%";
                 });
 
-                // ATTACH CLICK DETECTION FOR GENERIC INPUTS
-                rawContainer.addEventListener("change", (e) => {
-                    const tag = e.target.tagName.toLowerCase();
-                    const type = e.target.type;
-                    
-                    if (tag === "input" && (type === "radio" || type === "checkbox")) {
-                        const allInputs = Array.from(rawContainer.querySelectorAll("input[type=radio], input[type=checkbox]"));
-                        const ioIdx = allInputs.indexOf(e.target);
-                        if (ioIdx !== -1) {
-                            sendDynamicAction(idx, { type: "input", idx: ioIdx, checked: e.target.checked });
-                            card.classList.add("answered");
+                if (!isActive) {
+                    rawContainer.querySelectorAll("input, select, button").forEach(el => {
+                        el.disabled = true;
+                        el.style.cursor = "not-allowed";
+                    });
+                } else {
+                    // ATTACH CLICK DETECTION FOR GENERIC INPUTS (Solo si está activa)
+                    rawContainer.addEventListener("change", (e) => {
+                        const tag = e.target.tagName.toLowerCase();
+                        const type = e.target.type;
+                        
+                        if (tag === "input" && (type === "radio" || type === "checkbox")) {
+                            const allInputs = Array.from(rawContainer.querySelectorAll("input[type=radio], input[type=checkbox]"));
+                            const ioIdx = allInputs.indexOf(e.target);
+                            if (ioIdx !== -1) {
+                                sendDynamicAction(qIdx, { type: "input", idx: ioIdx, checked: e.target.checked });
+                                card.classList.add("answered");
+                            }
+                        } else if (tag === "select") {
+                            const allSelects = Array.from(rawContainer.querySelectorAll("select"));
+                            const selIdx = allSelects.indexOf(e.target);
+                            if (selIdx !== -1) {
+                                sendDynamicAction(qIdx, { type: "select", idx: selIdx, value: e.target.value });
+                                card.classList.add("answered");
+                            }
                         }
-                    } else if (tag === "select") {
-                        const allSelects = Array.from(rawContainer.querySelectorAll("select"));
-                        const selIdx = allSelects.indexOf(e.target);
-                        if (selIdx !== -1) {
-                            sendDynamicAction(idx, { type: "select", idx: selIdx, value: e.target.value });
-                            card.classList.add("answered");
-                        }
-                    }
-                });
+                    });
+                }
 
                 card.appendChild(rawContainer);
 
@@ -1594,11 +1635,11 @@ Problema a resolver:
 
                 const toggle = document.createElement("div");
                 toggle.className = "just-toggle";
-                toggle.innerHTML = '<span class="just-toggle-icon" id="just-icon-' + idx + '">▶</span><span class="just-toggle-label">Justificación</span>';
+                toggle.innerHTML = '<span class="just-toggle-icon" id="just-icon-' + qIdx + '">▶</span><span class="just-toggle-label">Justificación</span>';
 
                 const body = document.createElement("div");
                 body.className = "just-body";
-                body.id = "just-body-" + idx;
+                body.id = "just-body-" + qIdx;
 
                 // Toolbar with help button
                 const toolbar = document.createElement("div");
@@ -1614,22 +1655,22 @@ Problema a resolver:
 
                 const textarea = document.createElement("textarea");
                 textarea.className = "just-textarea";
-                textarea.id = "just-input-" + idx;
+                textarea.id = "just-input-" + qIdx;
                 textarea.placeholder = "Escribí la justificación en LaTeX...\nEj: $$F = ma$$\n$$F = (2)(9.8) = 19.6 \\text{ N}$$\n\nTocá 📐 Ayuda LaTeX para ver cómo hacerlo.";
                 textarea.value = q.justificacion || "";
 
                 const preview = document.createElement("div");
                 preview.className = "just-preview";
-                preview.id = "just-preview-" + idx;
+                preview.id = "just-preview-" + qIdx;
 
                 const status = document.createElement("div");
                 status.className = "just-status";
-                status.id = "just-status-" + idx;
+                status.id = "just-status-" + qIdx;
 
                 // Toggle expand
                 toggle.addEventListener("click", () => {
-                    const icon = document.getElementById("just-icon-" + idx);
-                    const b = document.getElementById("just-body-" + idx);
+                    const icon = document.getElementById("just-icon-" + qIdx);
+                    const b = document.getElementById("just-body-" + qIdx);
                     const isOpen = b.classList.contains("open");
                     b.classList.toggle("open");
                     icon.classList.toggle("open");
@@ -1639,23 +1680,20 @@ Problema a resolver:
                 // Auto-save + preview on input
                 textarea.addEventListener("input", () => {
                     const val = textarea.value;
-                    // Preview — use prepararHTML pipeline (same as client_fisica)
                     if (val.trim()) {
                         preview.innerHTML = "<div style='font-size:13px;line-height:1.8;'>" + prepararHTML(val) + "</div>";
                         preview.style.display = "block";
                         renderMath(preview);
-                        // Multi-pass rendering for complex LaTeX
                         setTimeout(() => renderMath(preview), 200);
                         setTimeout(() => renderMath(preview), 600);
                     } else {
                         preview.style.display = "none";
                     }
-                    // Debounced save
-                    clearTimeout(saveTimers[idx]);
-                    const st = document.getElementById("just-status-" + idx);
+                    clearTimeout(saveTimers[qIdx]);
+                    const st = document.getElementById("just-status-" + qIdx);
                     st.textContent = "Guardando...";
                     st.className = "just-status";
-                    saveTimers[idx] = setTimeout(() => saveJustificacion(idx, val), 800);
+                    saveTimers[qIdx] = setTimeout(() => saveJustificacion(qIdx, val), 800);
                 });
 
                 body.appendChild(toolbar);
@@ -1672,17 +1710,17 @@ Problema a resolver:
 
                 const chatToggle = document.createElement("div");
                 chatToggle.className = "chat-toggle";
-                chatToggle.innerHTML = '<span class="chat-toggle-icon" id="chat-icon-' + idx + '">▶</span>' +
+                chatToggle.innerHTML = '<span class="chat-toggle-icon" id="chat-icon-' + qIdx + '">▶</span>' +
                     '<span class="chat-toggle-label">💬 Chat</span>' +
-                    '<span id="chat-badge-' + idx + '" style="display:none" class="chat-badge">0</span>';
+                    '<span id="chat-badge-' + qIdx + '" style="display:none" class="chat-badge">0</span>';
 
                 const chatBody = document.createElement("div");
                 chatBody.className = "chat-body";
-                chatBody.id = "chat-body-" + idx;
+                chatBody.id = "chat-body-" + qIdx;
 
                 const chatMessages = document.createElement("div");
                 chatMessages.className = "chat-messages";
-                chatMessages.id = "chat-msgs-" + idx;
+                chatMessages.id = "chat-msgs-" + qIdx;
                 chatMessages.innerHTML = '<div class="chat-empty">Sin mensajes aún</div>';
 
                 const chatInputRow = document.createElement("div");
@@ -1691,7 +1729,7 @@ Problema a resolver:
                 const chatInput = document.createElement("input");
                 chatInput.type = "text";
                 chatInput.className = "chat-input";
-                chatInput.id = "chat-input-" + idx;
+                chatInput.id = "chat-input-" + qIdx;
                 chatInput.placeholder = "Escribí un mensaje...";
 
                 const chatSendBtn = document.createElement("button");
@@ -1700,8 +1738,8 @@ Problema a resolver:
 
                 // Toggle chat
                 chatToggle.addEventListener("click", () => {
-                    const cIcon = document.getElementById("chat-icon-" + idx);
-                    const cBody = document.getElementById("chat-body-" + idx);
+                    const cIcon = document.getElementById("chat-icon-" + qIdx);
+                    const cBody = document.getElementById("chat-body-" + qIdx);
                     const isOpen = cBody.classList.contains("open");
                     cBody.classList.toggle("open");
                     cIcon.classList.toggle("open");
@@ -1713,7 +1751,7 @@ Problema a resolver:
                     const text = chatInput.value.trim();
                     if (!text) return;
                     chatInput.value = "";
-                    sendChatMessage(idx, text);
+                    sendChatMessage(qIdx, text);
                 };
                 chatSendBtn.addEventListener("click", doSendChat);
                 chatInput.addEventListener("keydown", (e) => {
@@ -1731,14 +1769,13 @@ Problema a resolver:
                 container.appendChild(card);
 
                 // Initialize chat message count
-                chatMsgCounts[idx] = (q.mensajes || []).length;
+                chatMsgCounts[qIdx] = (q.mensajes || []).length;
 
                 // Render initial messages
                 if (q.mensajes && q.mensajes.length > 0) {
-                    renderChatMessages(idx, q.mensajes);
-                    // Auto-open chat if has messages
+                    renderChatMessages(qIdx, q.mensajes);
                     chatBody.classList.add("open");
-                    document.getElementById("chat-icon-" + idx)?.classList.add("open");
+                    document.getElementById("chat-icon-" + qIdx)?.classList.add("open");
                 }
 
                 // Render initial justification preview using prepararHTML pipeline
@@ -1748,9 +1785,8 @@ Problema a resolver:
                     setTimeout(() => renderMath(preview), 100);
                     setTimeout(() => renderMath(preview), 500);
                     setTimeout(() => renderMath(preview), 1200);
-                    // Auto-expand if has content
                     body.classList.add("open");
-                    document.getElementById("just-icon-" + idx)?.classList.add("open");
+                    document.getElementById("just-icon-" + qIdx)?.classList.add("open");
                 }
             });
 
@@ -1765,9 +1801,10 @@ Problema a resolver:
 
         async function sendDynamicAction(questionIndex, actionData) {
             // Update local session
-            if (session) {
-                if (!session.questions[questionIndex].respuesta) {
-                    session.questions[questionIndex].respuesta = "done";
+            if (session && session.questions) {
+                const targetQ = session.questions.find(q => q.index === questionIndex) || session.questions[questionIndex];
+                if (targetQ && !targetQ.respuesta) {
+                    targetQ.respuesta = "done";
                     const answered = session.questions.filter(q => q.respuesta).length;
                     updateProgress(answered, session.questions.length);
                 }
@@ -1791,15 +1828,22 @@ Problema a resolver:
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ sessionId: SESSION_ID, questionIndex, justificacion: text })
                 });
-                if (session) session.questions[questionIndex].justificacion = text;
+                if (session && session.questions) {
+                    const targetQ = session.questions.find(q => q.index === questionIndex) || session.questions[questionIndex];
+                    if (targetQ) targetQ.justificacion = text;
+                }
                 const st = document.getElementById("just-status-" + questionIndex);
-                st.textContent = "✓ Guardado";
-                st.className = "just-status saved";
-                setTimeout(() => { st.textContent = ""; }, 2000);
+                if (st) {
+                    st.textContent = "✓ Guardado";
+                    st.className = "just-status saved";
+                    setTimeout(() => { st.textContent = ""; }, 2000);
+                }
             } catch (e) {
                 const st = document.getElementById("just-status-" + questionIndex);
-                st.textContent = "Error guardando";
-                st.style.color = "#ef4444";
+                if (st) {
+                    st.textContent = "Error guardando";
+                    st.style.color = "#ef4444";
+                }
             }
         }
 
