@@ -1,7 +1,7 @@
 (async () => {
   if (window.__solverActivo) {
     if (typeof window.__helper_reScan === "function") {
-      window.__helper_reScan();
+      window.__helper_reScan(true);
       return;
     }
   }
@@ -756,20 +756,11 @@
     dot.style.opacity = s.op;
   }
 
-  // ── Toggle Z — ocultar/mostrar dots / Shift+Z: re-escanear página ──
+  // ── Toggle Z — ocultar/mostrar dots exclusivamente ──
   window.__helper_visible__ = true;
   const toggleZ = (e) => {
     if (e.key.toLowerCase() !== "z") return;
     if (e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
-    
-    // Shift + Z: Forzar re-escaneo manual de página
-    if (e.shiftKey) {
-      e.preventDefault();
-      if (typeof window.__helper_reScan === "function") {
-        window.__helper_reScan();
-      }
-      return;
-    }
 
     const now = Date.now();
     if (window.__helper_last_z__ && now - window.__helper_last_z__ < 300)
@@ -795,6 +786,39 @@
       d.querySelector("iframe#FRM_page") ||
       d.querySelector("iframe[name='pageFrame']");
     i2?.contentWindow?.addEventListener("keydown", toggleZ);
+  } catch (e) {}
+
+  // ── Toggle M — Re-escanear y actualizar cuestionario manualmente ──
+  const toggleM = (e) => {
+    if (e.key.toLowerCase() !== "m") return;
+    if (e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
+
+    const now = Date.now();
+    if (window.__helper_last_m__ && now - window.__helper_last_m__ < 800) return;
+    window.__helper_last_m__ = now;
+
+    if (typeof window.__helper_reScan === "function") {
+      window.__helper_reScan(true);
+      // Feedback visual sutil: parpadeo suave de los dots
+      getAllNestedDocuments().forEach((d) => {
+        try {
+          d.querySelectorAll(".__helper_dot__").forEach((dot) => {
+            dot.style.transform = "scale(1.5)";
+            setTimeout(() => { dot.style.transform = "scale(1)"; }, 350);
+          });
+        } catch (err) {}
+      });
+    }
+  };
+  window.addEventListener("keydown", toggleM);
+  try {
+    const i1 = document.getElementById("ctl_2");
+    const d = i1?.contentDocument || document;
+    d.addEventListener("keydown", toggleM);
+    const i2 =
+      d.querySelector("iframe#FRM_page") ||
+      d.querySelector("iframe[name='pageFrame']");
+    i2?.contentWindow?.addEventListener("keydown", toggleM);
   } catch (e) {}
 
   // ── DOM Utilities ──────────────────────────────────────────
@@ -1350,7 +1374,7 @@ iwIDAQAB
   let cachedNombreCodigo = null;
   let cachedNombreCompleto = null;
 
-  async function escanearYProcesarPagina(esReScan = false) {
+  async function escanearYProcesarPagina(esReScan = false, force = false) {
     if (isScanning) return;
     isScanning = true;
 
@@ -1375,7 +1399,7 @@ iwIDAQAB
       }
 
       const signature = foundQuestions.map(q => q.globalIndex + ":" + (q.b ? q.b.textContent?.substring(0, 30) : "")).join("|");
-      if (esReScan && signature === lastScannedSignatures && currentQuestions.length > 0 && currentQuestions[0].elemento?.isConnected) {
+      if (!force && esReScan && signature === lastScannedSignatures && currentQuestions.length > 0 && currentQuestions[0].elemento?.isConnected) {
         isScanning = false;
         return;
       }
@@ -1558,7 +1582,7 @@ iwIDAQAB
     }
   }
 
-  window.__helper_reScan = () => escanearYProcesarPagina(true);
+  window.__helper_reScan = (force = true) => escanearYProcesarPagina(true, force);
 
   function iniciarVigilantePagina() {
     let lastPgVal = "";

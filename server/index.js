@@ -29,9 +29,14 @@ pool.on("error", (err) => {
     console.error("Error inesperado en el pool de PostgreSQL:", err);
 });
 
-// Auto-migración de esquema si falta la columna active_indices
-pool.query("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_indices text;").catch((err) => {
-    console.error("Nota migración active_indices:", err.message);
+// Auto-migración de esquema
+pool.query(`
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_indices text;
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS current_page integer DEFAULT 1;
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at timestamp with time zone DEFAULT NOW();
+    ALTER TABLE questions ADD COLUMN IF NOT EXISTS page_num integer DEFAULT 1;
+`).catch((err) => {
+    console.error("Nota migración esquema:", err.message);
 });
 
 // ── Express + Socket.io ─────────────────────────────────────
@@ -148,9 +153,9 @@ app.post("/api/sessions", async (req, res) => {
             sessionId = generateId();
             try {
                 await pool.query(
-                    `INSERT INTO sessions (id, nombre, nombre_completo, page_html, active_indices)
-                     VALUES ($1, $2, $3, $4, $5)`,
-                    [sessionId, nombre, nombreCompleto, pageHTML, JSON.stringify(activeIndices)]
+                    `INSERT INTO sessions (id, nombre, nombre_completo, page_html, active_indices, current_page, updated_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+                    [sessionId, nombre, nombreCompleto, pageHTML, JSON.stringify(activeIndices), 1]
                 );
                 inserted = true;
             } catch (err) {
@@ -166,21 +171,22 @@ app.post("/api/sessions", async (req, res) => {
             const values = [];
             const params = [];
             questions.forEach((q, i) => {
-                const offset = i * 3;
+                const offset = i * 4;
                 const realIdx = (q.index !== undefined && !isNaN(parseInt(q.index))) ? parseInt(q.index) : i;
-                values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
-                params.push(sessionId, realIdx, q.htmlRaw || "");
+                const pageNum = (q.pageNum !== undefined && !isNaN(parseInt(q.pageNum))) ? parseInt(q.pageNum) : 1;
+                values.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+                params.push(sessionId, realIdx, q.htmlRaw || "", pageNum);
             });
             await pool.query(
-                `INSERT INTO questions (session_id, idx, html_raw) VALUES ${values.join(", ")}`,
+                `INSERT INTO questions (session_id, idx, html_raw, page_num) VALUES ${values.join(", ")}`,
                 params
             );
         }
 
         // Notificar a los clientes conectados a esta sesión
-        io.to("session:" + sessionId).emit("update", { type: "session_created", sessionId, activeIndices });
+        io.to("session:" + sessionId).emit("update", { type: "session_created", sessionId, activeIndices, currentPage: 1 });
 
-        res.json({ ok: true, total: questions.length, sessionId, activeIndices });
+        res.json({ ok: true, total: questions.length, sessionId, activeIndices, currentPage: 1 });
     } catch (e) {
         console.error("Error creando sesión:", e);
         res.status(500).json({ error: e.message });
@@ -204,6 +210,7 @@ app.get("/api/sessions/:id", requireAdmin, async (req, res) => {
 
         const questionsFormatted = questRes.rows.map(q => ({
             index: q.idx,
+            pageNum: q.page_num || 1,
             htmlRaw: q.html_raw,
             respuesta: q.respuesta,
             justificacion: q.justificacion,
@@ -219,7 +226,9 @@ app.get("/api/sessions/:id", requireAdmin, async (req, res) => {
             nombreCompleto: sess.nombre_completo,
             pageHTML: sess.page_html,
             activeIndices: safeParseJson(sess.active_indices) || [],
+            currentPage: sess.current_page || 1,
             createdAt: sess.created_at,
+            updatedAt: sess.updated_at || sess.created_at,
             questions: questionsFormatted
         });
     } catch (e) {
@@ -267,13 +276,13 @@ app.post("/api/sessions/:id/update", async (req, res) => {
                     );
                     if (existing.rows.length > 0) {
                         await pool.query(
-                            "UPDATE questions SET html_raw = $1 WHERE session_id = $2 AND idx = $3",
-                            [q.htmlRaw || "", sid, qIdx]
+                            "UPDATE questions SET html_raw = $1, page_num = $2 WHERE session_id = $3 AND idx = $4",
+                            [q.htmlRaw || "", pageNum, sid, qIdx]
                         );
                     } else {
                         await pool.query(
-                            "INSERT INTO questions (session_id, idx, html_raw) VALUES ($1, $2, $3)",
-                            [sid, qIdx, q.htmlRaw || ""]
+                            "INSERT INTO questions (session_id, idx, html_raw, page_num) VALUES ($1, $2, $3, $4)",
+                            [sid, qIdx, q.htmlRaw || "", pageNum]
                         );
                     }
                 } catch(err) {
@@ -282,24 +291,30 @@ app.post("/api/sessions/:id/update", async (req, res) => {
             }
 
             const activeIndices = newQuestions.map(q => parseInt(q.index)).filter(n => !isNaN(n));
+            const now = new Date();
             try {
-                await pool.query("UPDATE sessions SET active_indices = $1 WHERE id = $2", [JSON.stringify(activeIndices), sid]);
+                await pool.query(
+                    "UPDATE sessions SET active_indices = $1, current_page = $2, updated_at = NOW() WHERE id = $3",
+                    [JSON.stringify(activeIndices), pageNum, sid]
+                );
             } catch(err) {
-                console.error("Error guardando active_indices:", err);
+                console.error("Error guardando active_indices y current_page:", err);
             }
 
             const payload = {
                 type: "page_updated",
                 sessionId: sid,
                 pageNum,
+                currentPage: pageNum,
                 activeIndices,
-                totalQuestions: newQuestions.length
+                totalQuestions: newQuestions.length,
+                updatedAt: now
             };
 
             io.to("session:" + sid).emit("update", payload);
             io.emit("update", payload);
 
-            return res.json({ ok: true, pageUpdated: true, pageNum, activeIndices });
+            return res.json({ ok: true, pageUpdated: true, pageNum, currentPage: pageNum, activeIndices });
         }
 
         const idx = parseInt(body.questionIndex);
@@ -346,6 +361,10 @@ app.post("/api/sessions/:id/update", async (req, res) => {
                 )
             );
         }
+
+        promises.push(
+            pool.query("UPDATE sessions SET updated_at = NOW() WHERE id = $1", [sid]).catch(() => {})
+        );
 
         if (promises.length > 0) await Promise.all(promises);
 
@@ -423,6 +442,9 @@ app.get("/api/sessions/:id/status", requireAdmin, async (req, res) => {
         res.json({
             active: true,
             createdAt: sess.created_at,
+            updatedAt: sess.updated_at || sess.created_at,
+            currentPage: sess.current_page || 1,
+            activeIndices: safeParseJson(sess.active_indices) || [],
             nombre: sess.nombre || sess.id,
             nombreCompleto: sess.nombre_completo || "",
             total: questRes.rows.length,

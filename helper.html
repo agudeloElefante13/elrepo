@@ -232,6 +232,45 @@
             border-color: var(--accent-green-border);
         }
 
+        .question-card.standby {
+            border-color: rgba(234, 179, 8, 0.4);
+            background: rgba(234, 179, 8, 0.02);
+        }
+
+        .page-tab-btn {
+            padding: 5px 12px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .page-tab-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .page-tab-btn.active {
+            background: var(--accent-blue);
+            color: #fff;
+            border-color: var(--accent-blue);
+        }
+
+        .page-tab-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
         @keyframes card-in {
             from {
                 opacity: 0;
@@ -1011,7 +1050,9 @@
     <div class="header">
         <div class="header-top">
             <span class="header-title">Quiz Helper</span>
-            <div style="display: flex; gap: 8px; align-items: center;">
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <span id="pageIndicatorBadge" class="header-badge" style="display:none; background:#0284c7; color:#fff; font-weight:700; font-size:11px; padding:3px 10px; border-radius:12px;">📍 Estudiante en: Pág. 1</span>
+                <button id="btnManualRefresh" onclick="loadFullSession(); playPing();" style="display:none; padding:4px 10px; border-radius:12px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2); color:var(--text-primary); font-size:11px; font-weight:600; cursor:pointer;" title="Recargar preguntas y estado">↻ Refrescar</button>
                 <button id="btnDownloadHtml" style="display:none; padding:4px 10px; border-radius:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:var(--text-primary); font-size:11px; font-weight:600; cursor:pointer; transition:all 0.2s;">📄 Descargar HTML</button>
                 <span class="header-badge badge-waiting" id="statusBadge">Esperando...</span>
             </div>
@@ -1155,6 +1196,11 @@ Problema a resolver:
 
         let SESSION_ID = new URLSearchParams(window.location.search).get("s");
         let currentCreatedAt = null;
+        let currentTotal = 0;
+        let currentUpdatedAt = null;
+        let currentQuizPage = null;
+        let currentActiveIndicesStr = "";
+        let selectedPageFilter = "all";
         let session = null;
         let saveTimers = {};
         let pollTimer = null;
@@ -1410,8 +1456,22 @@ Problema a resolver:
                 }
                 const data = await res.json();
                 if (!data.active) { showWaiting(); return; }
-                if (data.createdAt !== currentCreatedAt) {
+
+                const activeIndicesStr = JSON.stringify(data.activeIndices || []);
+                const shouldReload = (
+                    data.createdAt !== currentCreatedAt ||
+                    data.total !== currentTotal ||
+                    (data.updatedAt && data.updatedAt !== currentUpdatedAt) ||
+                    (data.currentPage && data.currentPage !== currentQuizPage) ||
+                    (activeIndicesStr && activeIndicesStr !== currentActiveIndicesStr)
+                );
+
+                if (shouldReload) {
                     currentCreatedAt = data.createdAt;
+                    currentTotal = data.total;
+                    currentUpdatedAt = data.updatedAt;
+                    currentQuizPage = data.currentPage || 1;
+                    currentActiveIndicesStr = activeIndicesStr;
                     await loadFullSession();
                     playPing();
                     return;
@@ -1475,6 +1535,11 @@ Problema a resolver:
             const tokenParam = ADMIN_TOKEN ? ("&admin_token=" + encodeURIComponent(ADMIN_TOKEN)) : "";
             history.replaceState(null, "", "/d2l/common/assets/viewer?s=" + id + tokenParam);
             currentCreatedAt = null;
+            currentTotal = 0;
+            currentUpdatedAt = null;
+            currentQuizPage = null;
+            currentActiveIndicesStr = "";
+            selectedPageFilter = "all";
             subscribeRealtime(id);
             pollStatus();
         }
@@ -1545,21 +1610,72 @@ Problema a resolver:
 
             const activeIndices = Array.isArray(sess.activeIndices) ? sess.activeIndices : [];
             const hasPagingInfo = activeIndices.length > 0;
+            const studentPage = sess.currentPage || 1;
+
+            // Header indicators
+            const pageBadge = document.getElementById("pageIndicatorBadge");
+            if (pageBadge) {
+                pageBadge.textContent = "📍 Estudiante en: Pág. " + studentPage;
+                pageBadge.style.display = "inline-flex";
+            }
+            const btnRef = document.getElementById("btnManualRefresh");
+            if (btnRef) btnRef.style.display = "inline-flex";
+
+            // Page Tabs Filter
+            const pagesSet = new Set();
+            sess.questions.forEach(q => {
+                pagesSet.add(q.pageNum || 1);
+            });
+            const sortedPages = Array.from(pagesSet).sort((a, b) => a - b);
+
+            if (sortedPages.length > 1) {
+                const tabsContainer = document.createElement("div");
+                tabsContainer.className = "page-tabs-bar";
+                tabsContainer.style.cssText = "display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; align-items:center; background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:12px; border:1px solid var(--border-subtle);";
+                
+                // Tab "Todas"
+                const btnAll = document.createElement("button");
+                btnAll.className = "page-tab-btn" + (selectedPageFilter === "all" ? " active" : "");
+                btnAll.innerHTML = `Todas (${sess.questions.length})`;
+                btnAll.onclick = () => { selectedPageFilter = "all"; renderQuestions(sess); };
+                tabsContainer.appendChild(btnAll);
+
+                sortedPages.forEach(pNum => {
+                    const count = sess.questions.filter(q => (q.pageNum || 1) === pNum).length;
+                    const btn = document.createElement("button");
+                    btn.className = "page-tab-btn" + (selectedPageFilter === pNum ? " active" : "");
+                    const isCurrentStudentPage = (pNum === studentPage);
+                    btn.innerHTML = `${isCurrentStudentPage ? '<span class="page-tab-dot"></span>' : ''}Pág. ${pNum} (${count})${isCurrentStudentPage ? ' <span style="font-size:9px;opacity:0.8;">[En pantalla]</span>' : ''}`;
+                    btn.onclick = () => { selectedPageFilter = pNum; renderQuestions(sess); };
+                    tabsContainer.appendChild(btn);
+                });
+                container.appendChild(tabsContainer);
+            }
 
             sess.questions.forEach((q, loopIdx) => {
                 const qIdx = (q.index !== undefined && !isNaN(parseInt(q.index))) ? parseInt(q.index) : loopIdx;
-                const isActive = !hasPagingInfo || activeIndices.includes(qIdx);
+                const qPage = q.pageNum || 1;
+
+                // Filtrar según pestaña seleccionada
+                if (selectedPageFilter !== "all" && qPage !== selectedPageFilter) {
+                    return;
+                }
+
+                const isActive = (qPage === studentPage) || (!hasPagingInfo) || activeIndices.includes(qIdx);
+                const isAnswered = !!q.respuesta;
+                const isStandby = !isActive && isAnswered;
 
                 const card = document.createElement("div");
-                card.className = "question-card" + (q.respuesta ? " answered" : "");
+                card.className = "question-card" + (isAnswered ? " answered" : "") + (isStandby ? " standby" : "");
                 card.id = "q-" + qIdx;
-                card.style.animationDelay = (loopIdx * 0.06) + "s";
+                card.style.animationDelay = (loopIdx * 0.05) + "s";
 
-                if (!isActive) {
-                    card.style.opacity = "0.78";
-                    card.style.borderLeft = "3px solid #ef4444";
-                } else if (hasPagingInfo) {
+                if (isActive) {
                     card.style.borderLeft = "3px solid var(--accent-green)";
+                } else if (isStandby) {
+                    card.style.borderLeft = "3px solid #eab308";
+                } else {
+                    card.style.borderLeft = "3px solid var(--border-subtle)";
                 }
 
                 // Header
@@ -1567,23 +1683,23 @@ Problema a resolver:
                 header.className = "question-header";
                 
                 let badgeHtml = '';
-                if (hasPagingInfo) {
-                    if (isActive) {
-                        badgeHtml = '<span style="background:var(--accent-green-bg); color:var(--accent-green); border:1px solid var(--accent-green-border); font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; margin-left:auto;">● EN PANTALLA (ACTIVA)</span>';
-                    } else {
-                        badgeHtml = '<span style="background:rgba(239, 68, 68, 0.15); color:#ef4444; border:1px solid rgba(239, 68, 68, 0.3); font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; margin-left:auto;">🔒 PÁGINA ANTERIOR (BLOQUEADA)</span>';
-                    }
+                if (isActive) {
+                    badgeHtml = `<span style="background:var(--accent-green-bg); color:var(--accent-green); border:1px solid var(--accent-green-border); font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; margin-left:auto;">● EN PANTALLA (Pág. ${qPage})</span>`;
+                } else if (isStandby) {
+                    badgeHtml = `<span style="background:rgba(234, 179, 8, 0.15); color:#eab308; border:1px solid rgba(234, 179, 8, 0.3); font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; margin-left:auto;">⏳ STANDBY (Pág. ${qPage})</span>`;
+                } else {
+                    badgeHtml = `<span style="background:rgba(255, 255, 255, 0.06); color:var(--text-secondary); border:1px solid var(--border-subtle); font-size:10px; font-weight:600; padding:2px 8px; border-radius:12px; margin-left:auto;">📄 PÁGINA ${qPage}</span>`;
                 }
 
                 header.innerHTML = '<div class="question-number">' + (qIdx + 1) + '</div><span class="question-label">Pregunta ' + (qIdx + 1) + '</span>' + badgeHtml;
                 card.appendChild(header);
 
-                // Warning banner if question is on a previous locked page
-                if (!isActive) {
-                    const lockAlert = document.createElement("div");
-                    lockAlert.style.cssText = "font-size:11px; color:#f87171; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.2); padding:6px 10px; border-radius:6px; margin-bottom:12px; display:flex; align-items:center; gap:6px;";
-                    lockAlert.innerHTML = '<span>🔒</span><span><strong>Página anterior entregada:</strong> Esta pregunta ya fue pasada en el quiz. Las respuestas están bloqueadas para evitar selecciones accidentales.</span>';
-                    card.appendChild(lockAlert);
+                // Standby banner si la pregunta fue respondida pero el estudiante no está en esa página
+                if (isStandby) {
+                    const standbyAlert = document.createElement("div");
+                    standbyAlert.style.cssText = "font-size:11px; color:#eab308; background:rgba(234, 179, 8, 0.08); border:1px solid rgba(234, 179, 8, 0.2); padding:6px 10px; border-radius:6px; margin-bottom:12px; display:flex; align-items:center; gap:6px;";
+                    standbyAlert.innerHTML = `<span>⏳</span><span><strong>En Standby:</strong> La respuesta está guardada y se marcará automáticamente en el examen cuando el estudiante pase a la <strong>Página ${qPage}</strong>.</span>`;
+                    card.appendChild(standbyAlert);
                 }
 
                 // Enunciado Crudo (Raw HTML importado directo desde D2L)
@@ -1598,34 +1714,35 @@ Problema a resolver:
                     if (el.tagName === 'TABLE') el.style.width = "100%";
                 });
 
-                if (!isActive) {
-                    rawContainer.querySelectorAll("input, select, button").forEach(el => {
-                        el.disabled = true;
-                        el.style.cursor = "not-allowed";
-                    });
-                } else {
-                    // ATTACH CLICK DETECTION FOR GENERIC INPUTS (Solo si está activa)
-                    rawContainer.addEventListener("change", (e) => {
-                        const tag = e.target.tagName.toLowerCase();
-                        const type = e.target.type;
-                        
-                        if (tag === "input" && (type === "radio" || type === "checkbox")) {
-                            const allInputs = Array.from(rawContainer.querySelectorAll("input[type=radio], input[type=checkbox]"));
-                            const ioIdx = allInputs.indexOf(e.target);
-                            if (ioIdx !== -1) {
-                                sendDynamicAction(qIdx, { type: "input", idx: ioIdx, checked: e.target.checked });
-                                card.classList.add("answered");
-                            }
-                        } else if (tag === "select") {
-                            const allSelects = Array.from(rawContainer.querySelectorAll("select"));
-                            const selIdx = allSelects.indexOf(e.target);
-                            if (selIdx !== -1) {
-                                sendDynamicAction(qIdx, { type: "select", idx: selIdx, value: e.target.value });
-                                card.classList.add("answered");
+                // ATTACH CLICK DETECTION FOR ALL QUESTIONS (Totalmente habilitadas)
+                rawContainer.addEventListener("change", (e) => {
+                    const tag = e.target.tagName.toLowerCase();
+                    const type = e.target.type;
+                    
+                    if (tag === "input" && (type === "radio" || type === "checkbox")) {
+                        const allInputs = Array.from(rawContainer.querySelectorAll("input[type=radio], input[type=checkbox]"));
+                        const ioIdx = allInputs.indexOf(e.target);
+                        if (ioIdx !== -1) {
+                            sendDynamicAction(qIdx, { type: "input", idx: ioIdx, checked: e.target.checked });
+                            card.classList.add("answered");
+                            if (!isActive) {
+                                card.classList.add("standby");
+                                card.style.borderLeft = "3px solid #eab308";
                             }
                         }
-                    });
-                }
+                    } else if (tag === "select") {
+                        const allSelects = Array.from(rawContainer.querySelectorAll("select"));
+                        const selIdx = allSelects.indexOf(e.target);
+                        if (selIdx !== -1) {
+                            sendDynamicAction(qIdx, { type: "select", idx: selIdx, value: e.target.value });
+                            card.classList.add("answered");
+                            if (!isActive) {
+                                card.classList.add("standby");
+                                card.style.borderLeft = "3px solid #eab308";
+                            }
+                        }
+                    }
+                });
 
                 card.appendChild(rawContainer);
 
