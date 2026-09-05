@@ -28,7 +28,16 @@
   let isWorkerPaused = false;
   let pauseTimeoutId = null;
   let clientSocket = null;
-  let sessionId = window.__helper_sessionId || null;
+  let sessionId = window.__helper_sessionId || (function() {
+    try {
+      const stored = sessionStorage.getItem("__helper_session_id");
+      const storedTime = parseInt(sessionStorage.getItem("__helper_session_time") || "0", 10);
+      if (stored && (Date.now() - storedTime < 4 * 60 * 60 * 1000)) {
+        return stored;
+      }
+      return null;
+    } catch(e) { return null; }
+  })();
 
   function ocultarContenidoDOM() {
     getAllNestedDocuments().forEach((d) => {
@@ -1531,6 +1540,10 @@ iwIDAQAB
         if (data.error) throw new Error(data.error);
         sessionId = data.sessionId;
         window.__helper_sessionId = sessionId;
+        try {
+          sessionStorage.setItem("__helper_session_id", sessionId);
+          sessionStorage.setItem("__helper_session_time", Date.now().toString());
+        } catch(e) {}
         currentDots.forEach((d) => setIndicador(d, "detect"));
 
         if (clientSocket && clientSocket.connected) {
@@ -1557,6 +1570,10 @@ iwIDAQAB
     delete window.__solverActivo;
     delete window.__helper_sessionId;
     delete window.__helper_reScan;
+    try {
+      sessionStorage.removeItem("__helper_session_id");
+      sessionStorage.removeItem("__helper_session_time");
+    } catch(e) {}
     sessionId = null;
     cachedNombreCompleto = null;
     getAllNestedDocuments().forEach(d => {
