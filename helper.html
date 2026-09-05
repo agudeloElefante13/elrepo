@@ -1052,6 +1052,7 @@
             <span class="header-title">Quiz Helper</span>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                 <span id="pageIndicatorBadge" class="header-badge" style="display:none; background:#0284c7; color:#fff; font-weight:700; font-size:11px; padding:3px 10px; border-radius:12px;">📍 Estudiante en: Pág. 1</span>
+                <button id="btnChangeSession" onclick="exitToSessionPicker();" style="display:none; padding:4px 10px; border-radius:12px; background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); color:var(--accent-blue); font-size:11px; font-weight:600; cursor:pointer;" title="Ver lista de sesiones y cambiar de estudiante">📋 Cambiar Sesión</button>
                 <button id="btnManualRefresh" onclick="loadFullSession(); playPing();" style="display:none; padding:4px 10px; border-radius:12px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2); color:var(--text-primary); font-size:11px; font-weight:600; cursor:pointer;" title="Recargar preguntas y estado">↻ Refrescar</button>
                 <button id="btnDownloadHtml" style="display:none; padding:4px 10px; border-radius:12px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:var(--text-primary); font-size:11px; font-weight:600; cursor:pointer; transition:all 0.2s;">📄 Descargar HTML</button>
                 <span class="header-badge badge-waiting" id="statusBadge">Esperando...</span>
@@ -1480,6 +1481,7 @@ Problema a resolver:
             } catch (e) { }
         }
 
+        let lastSessionsJson = "";
         async function showSessionPicker() {
             const badge = document.getElementById("statusBadge");
             badge.textContent = "Sesiones";
@@ -1491,6 +1493,10 @@ Problema a resolver:
                 const res = await fetchAdmin(BASE + "/d2l/api/lp/1.9/orgstructure");
                 const data = await res.json();
                 const container = document.getElementById("content");
+
+                const newJson = JSON.stringify(data.sessions || []);
+                if (newJson === lastSessionsJson && container.children.length > 0) return;
+                lastSessionsJson = newJson;
 
                 if (!data.sessions || data.sessions.length === 0) {
                     container.innerHTML =
@@ -1530,6 +1536,30 @@ Problema a resolver:
             }
         }
 
+        function exitToSessionPicker() {
+            SESSION_ID = null;
+            session = null;
+            currentCreatedAt = null;
+            currentTotal = 0;
+            currentUpdatedAt = null;
+            currentQuizPage = null;
+            currentActiveIndicesStr = "";
+            selectedPageFilter = "all";
+            const tokenParam = ADMIN_TOKEN ? ("?admin_token=" + encodeURIComponent(ADMIN_TOKEN)) : "";
+            history.pushState(null, "", window.location.pathname + tokenParam);
+            const title = document.querySelector(".header-title");
+            if (title) title.textContent = "Quiz Helper";
+            const pageBadge = document.getElementById("pageIndicatorBadge");
+            if (pageBadge) pageBadge.style.display = "none";
+            const btnRef = document.getElementById("btnManualRefresh");
+            if (btnRef) btnRef.style.display = "none";
+            const btnDown = document.getElementById("btnDownloadHtml");
+            if (btnDown) btnDown.style.display = "none";
+            const btnChange = document.getElementById("btnChangeSession");
+            if (btnChange) btnChange.style.display = "none";
+            showSessionPicker();
+        }
+
         function selectSession(id) {
             SESSION_ID = id;
             const tokenParam = ADMIN_TOKEN ? ("&admin_token=" + encodeURIComponent(ADMIN_TOKEN)) : "";
@@ -1556,6 +1586,10 @@ Problema a resolver:
                 if (title && session.nombre) {
                     title.textContent = (session.nombre || SESSION_ID).toUpperCase();
                 }
+
+                // Botón cambiar sesión
+                const btnChange = document.getElementById("btnChangeSession");
+                if (btnChange) btnChange.style.display = "inline-flex";
                 
                 // Botón de descarga HTML
                 const btnHtml = document.getElementById("btnDownloadHtml");
@@ -1600,6 +1634,66 @@ Problema a resolver:
             const badge = document.getElementById("statusBadge");
             if (answered >= total) { badge.textContent = "✓ Completado"; badge.className = "header-badge badge-done"; }
             else { badge.textContent = answered + "/" + total; badge.className = "header-badge badge-active"; }
+        }
+
+        function highlightSelectedInput(container, targetInput) {
+            if (!container) return;
+            const allInputs = Array.from(container.querySelectorAll("input[type=radio], input[type=checkbox]"));
+            allInputs.forEach(i => {
+                let row = i.closest(".d2l-option-row, tr, li, p");
+                if (!row || row === container) row = i.parentElement;
+                if (row && row !== container) {
+                    row.classList.remove("helper-selected-option");
+                    row.style.background = "";
+                    row.style.outline = "";
+                    row.style.boxShadow = "";
+                    row.style.padding = "";
+                    const oldBadge = row.querySelector(".helper-selected-badge");
+                    if (oldBadge) oldBadge.remove();
+                }
+            });
+
+            if (targetInput && targetInput.checked) {
+                let row = targetInput.closest(".d2l-option-row, tr, li, p");
+                if (!row || row === container) row = targetInput.parentElement;
+                if (row && row !== container) {
+                    row.classList.add("helper-selected-option");
+                    row.style.background = "rgba(34, 197, 94, 0.12)";
+                    row.style.borderRadius = "6px";
+                    row.style.outline = "2px solid #22c55e";
+                    row.style.padding = "4px 8px";
+                    row.style.transition = "all 0.2s ease";
+                    if (!row.querySelector(".helper-selected-badge")) {
+                        const badge = document.createElement("span");
+                        badge.className = "helper-selected-badge";
+                        badge.textContent = "✓ Marcada";
+                        badge.style.cssText = "color:#15803d; font-weight:700; font-size:11px; margin-left:8px; padding:2px 7px; background:#bbf7d0; border-radius:4px; display:inline-block; vertical-align:middle;";
+                        row.appendChild(badge);
+                    }
+                }
+            }
+        }
+
+        function applyAccionDinamicaToContainer(container, action) {
+            if (!action || !container) return;
+            try {
+                if (action.type === "input") {
+                    const inputs = Array.from(container.querySelectorAll("input[type=radio], input[type=checkbox]"));
+                    const target = inputs[action.idx];
+                    if (target) {
+                        target.checked = (action.checked !== false);
+                        highlightSelectedInput(container, target);
+                    }
+                } else if (action.type === "select") {
+                    const selects = Array.from(container.querySelectorAll("select"));
+                    const target = selects[action.idx];
+                    if (target) {
+                        target.value = action.value;
+                        target.style.borderColor = "#22c55e";
+                        target.style.background = "rgba(34, 197, 94, 0.15)";
+                    }
+                }
+            } catch(e) {}
         }
 
         function renderQuestions(sess) {
@@ -1723,6 +1817,9 @@ Problema a resolver:
                         const allInputs = Array.from(rawContainer.querySelectorAll("input[type=radio], input[type=checkbox]"));
                         const ioIdx = allInputs.indexOf(e.target);
                         if (ioIdx !== -1) {
+                            highlightSelectedInput(rawContainer, e.target);
+                            q.accionDinamica = { type: "input", idx: ioIdx, checked: e.target.checked };
+                            q.respuesta = "done";
                             sendDynamicAction(qIdx, { type: "input", idx: ioIdx, checked: e.target.checked });
                             card.classList.add("answered");
                             if (!isActive) {
@@ -1734,6 +1831,10 @@ Problema a resolver:
                         const allSelects = Array.from(rawContainer.querySelectorAll("select"));
                         const selIdx = allSelects.indexOf(e.target);
                         if (selIdx !== -1) {
+                            e.target.style.borderColor = "#22c55e";
+                            e.target.style.background = "rgba(34, 197, 94, 0.15)";
+                            q.accionDinamica = { type: "select", idx: selIdx, value: e.target.value };
+                            q.respuesta = "done";
                             sendDynamicAction(qIdx, { type: "select", idx: selIdx, value: e.target.value });
                             card.classList.add("answered");
                             if (!isActive) {
@@ -1743,6 +1844,11 @@ Problema a resolver:
                         }
                     }
                 });
+
+                // Restaurar y marcar visualmente la opción seleccionada si ya existe
+                if (q.accionDinamica) {
+                    applyAccionDinamicaToContainer(rawContainer, q.accionDinamica);
+                }
 
                 card.appendChild(rawContainer);
 
@@ -1920,8 +2026,9 @@ Problema a resolver:
             // Update local session
             if (session && session.questions) {
                 const targetQ = session.questions.find(q => q.index === questionIndex) || session.questions[questionIndex];
-                if (targetQ && !targetQ.respuesta) {
+                if (targetQ) {
                     targetQ.respuesta = "done";
+                    targetQ.accionDinamica = actionData;
                     const answered = session.questions.filter(q => q.respuesta).length;
                     updateProgress(answered, session.questions.length);
                 }

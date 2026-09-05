@@ -719,8 +719,8 @@
       "width:7px",
       "height:7px",
       "border-radius:50%",
-      "background:#888",
-      "opacity:0.3",
+      "background:#f59e0b",
+      "opacity:0.75",
       "margin-left:6px",
       "vertical-align:middle",
       "transition:background 0.4s,opacity 0.4s",
@@ -745,11 +745,11 @@
   function setIndicador(dot, estado) {
     if (!dot) return;
     const map = {
-      detect: { bg: "#9ca3af", op: "0.30" },
-      loading: { bg: "#f59e0b", op: "0.60" },
-      done: { bg: "#22c55e", op: "0.70" },
-      graph: { bg: "#38bdf8", op: "0.80" }, // Color azul para gráficas
-      error: { bg: "#ef4444", op: "0.55" },
+      detect: { bg: "#f59e0b", op: "0.75" },  // Amarillo: cargó / conectado esperando respuesta
+      loading: { bg: "#f59e0b", op: "0.75" }, // Amarillo: enviando / sincronizando
+      done: { bg: "#22c55e", op: "0.85" },    // Verde: respuesta marcada
+      graph: { bg: "#38bdf8", op: "0.85" },   // Azul: gráfica
+      error: { bg: "#ef4444", op: "0.85" },   // Rojo: no cargó / error de conexión
     };
     const s = map[estado] || map.detect;
     dot.style.background = s.bg;
@@ -1583,6 +1583,16 @@ iwIDAQAB
   }
 
   window.__helper_reScan = (force = true) => escanearYProcesarPagina(true, force);
+  window.__helper_resetSession = () => {
+    delete window.__solverActivo;
+    delete window.__helper_sessionId;
+    delete window.__helper_reScan;
+    sessionId = null;
+    cachedNombreCompleto = null;
+    getAllNestedDocuments().forEach(d => {
+      d.querySelectorAll(".__helper_dot__, .__groq_justification_div, .__groq_chat_container").forEach(el => el.remove());
+    });
+  };
 
   function iniciarVigilantePagina() {
     let lastPgVal = "";
