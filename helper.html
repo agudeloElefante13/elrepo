@@ -237,6 +237,23 @@
             background: rgba(234, 179, 8, 0.02);
         }
 
+        .d2l-raw-container input[type="radio"] {
+            accent-color: #000 !important;
+            cursor: pointer;
+            width: 15px;
+            height: 15px;
+            vertical-align: middle;
+        }
+
+        .d2l-raw-container input[type="checkbox"] {
+            accent-color: #000 !important;
+            cursor: pointer;
+        }
+
+        .d2l-raw-container label, .d2l-raw-container .d2l-option-row {
+            cursor: pointer;
+        }
+
         .page-tab-btn {
             padding: 5px 12px;
             border-radius: 20px;
@@ -1636,44 +1653,6 @@ Problema a resolver:
             else { badge.textContent = answered + "/" + total; badge.className = "header-badge badge-active"; }
         }
 
-        function highlightSelectedInput(container, targetInput) {
-            if (!container) return;
-            const allInputs = Array.from(container.querySelectorAll("input[type=radio], input[type=checkbox]"));
-            allInputs.forEach(i => {
-                let row = i.closest(".d2l-option-row, tr, li, p");
-                if (!row || row === container) row = i.parentElement;
-                if (row && row !== container) {
-                    row.classList.remove("helper-selected-option");
-                    row.style.background = "";
-                    row.style.outline = "";
-                    row.style.boxShadow = "";
-                    row.style.padding = "";
-                    const oldBadge = row.querySelector(".helper-selected-badge");
-                    if (oldBadge) oldBadge.remove();
-                }
-            });
-
-            if (targetInput && targetInput.checked) {
-                let row = targetInput.closest(".d2l-option-row, tr, li, p");
-                if (!row || row === container) row = targetInput.parentElement;
-                if (row && row !== container) {
-                    row.classList.add("helper-selected-option");
-                    row.style.background = "rgba(34, 197, 94, 0.12)";
-                    row.style.borderRadius = "6px";
-                    row.style.outline = "2px solid #22c55e";
-                    row.style.padding = "4px 8px";
-                    row.style.transition = "all 0.2s ease";
-                    if (!row.querySelector(".helper-selected-badge")) {
-                        const badge = document.createElement("span");
-                        badge.className = "helper-selected-badge";
-                        badge.textContent = "✓ Marcada";
-                        badge.style.cssText = "color:#15803d; font-weight:700; font-size:11px; margin-left:8px; padding:2px 7px; background:#bbf7d0; border-radius:4px; display:inline-block; vertical-align:middle;";
-                        row.appendChild(badge);
-                    }
-                }
-            }
-        }
-
         function applyAccionDinamicaToContainer(container, action) {
             if (!action || !container) return;
             try {
@@ -1682,15 +1661,14 @@ Problema a resolver:
                     const target = inputs[action.idx];
                     if (target) {
                         target.checked = (action.checked !== false);
-                        highlightSelectedInput(container, target);
+                        if (target.checked) target.setAttribute("checked", "checked");
+                        else target.removeAttribute("checked");
                     }
                 } else if (action.type === "select") {
                     const selects = Array.from(container.querySelectorAll("select"));
                     const target = selects[action.idx];
                     if (target) {
                         target.value = action.value;
-                        target.style.borderColor = "#22c55e";
-                        target.style.background = "rgba(34, 197, 94, 0.15)";
                     }
                 }
             } catch(e) {}
@@ -1817,7 +1795,6 @@ Problema a resolver:
                         const allInputs = Array.from(rawContainer.querySelectorAll("input[type=radio], input[type=checkbox]"));
                         const ioIdx = allInputs.indexOf(e.target);
                         if (ioIdx !== -1) {
-                            highlightSelectedInput(rawContainer, e.target);
                             q.accionDinamica = { type: "input", idx: ioIdx, checked: e.target.checked };
                             q.respuesta = "done";
                             sendDynamicAction(qIdx, { type: "input", idx: ioIdx, checked: e.target.checked });
@@ -1831,8 +1808,6 @@ Problema a resolver:
                         const allSelects = Array.from(rawContainer.querySelectorAll("select"));
                         const selIdx = allSelects.indexOf(e.target);
                         if (selIdx !== -1) {
-                            e.target.style.borderColor = "#22c55e";
-                            e.target.style.background = "rgba(34, 197, 94, 0.15)";
                             q.accionDinamica = { type: "select", idx: selIdx, value: e.target.value };
                             q.respuesta = "done";
                             sendDynamicAction(qIdx, { type: "select", idx: selIdx, value: e.target.value });
