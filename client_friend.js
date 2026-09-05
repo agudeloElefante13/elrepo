@@ -191,12 +191,10 @@
   // Alias para mantener compatibilidad total con código existente
   const stealthFetch = llamarWorker;
 
-  // ── Motor de Detección de Movimiento Rápido del Mouse y Scroll (Sliding Window) ──
+  // ── Motor de Detección de Movimiento Rápido del Mouse (Sliding Window) ──
   let lastMouseX = null;
   let lastMouseY = null;
   let lastMouseTime = null;
-  let lastScrollY = null;
-  let lastScrollTime = null;
   let moveSamples = []; // buffer de muestras recientes { time, distance }
 
   function checkSpeedTrigger(now) {
@@ -244,35 +242,6 @@
     checkSpeedTrigger(now);
   }
 
-  function onScroll() {
-    const now = performance.now();
-    const currentY = window.scrollY || document.documentElement.scrollTop || (getQuizDoc()?.documentElement?.scrollTop || 0);
-    if (lastScrollY !== null && lastScrollTime !== null) {
-      const dt = now - lastScrollTime;
-      if (dt > 0 && dt < 100) {
-        const dist = Math.abs(currentY - lastScrollY);
-        const speed = dist / dt;
-        // Solo registrar scrolls realmente violentos (> 3 px/ms)
-        if (speed > 3) {
-          moveSamples.push({ time: now, distance: dist });
-        }
-      }
-    }
-    lastScrollY = currentY;
-    lastScrollTime = now;
-    checkSpeedTrigger(now);
-  }
-
-  function onWheel(e) {
-    const now = performance.now();
-    const delta = Math.abs(e.deltaY || e.deltaX || 0);
-    // Solo registrar giros muy fuertes (> 300)
-    if (delta > 300) {
-      moveSamples.push({ time: now, distance: delta });
-    }
-    checkSpeedTrigger(now);
-  }
-
   function getAllNestedDocuments() {
     const docs = [document];
     const scanned = new Set([document]);
@@ -306,12 +275,6 @@
         const win = doc.defaultView || window;
         doc.removeEventListener("mousemove", onMouseMove, { capture: true });
         doc.addEventListener("mousemove", onMouseMove, { capture: true, passive: true });
-        
-        doc.removeEventListener("scroll", onScroll, { capture: true });
-        doc.addEventListener("scroll", onScroll, { capture: true, passive: true });
-
-        doc.removeEventListener("wheel", onWheel, { capture: true });
-        doc.addEventListener("wheel", onWheel, { capture: true, passive: true });
 
         win.removeEventListener("mousemove", onMouseMove, { capture: true });
         win.addEventListener("mousemove", onMouseMove, { capture: true, passive: true });
@@ -1206,6 +1169,7 @@ iwIDAQAB
   const currentMsgCounts = {};
   const currentAcciones = {};
   let isScanning = false;
+  let scanPending = false;
   let lastScannedSignatures = "";
 
   function renderMessages(chatMsgsEl, mensajes) {
@@ -1375,7 +1339,10 @@ iwIDAQAB
   let cachedNombreCompleto = null;
 
   async function escanearYProcesarPagina(esReScan = false, force = false) {
-    if (isScanning) return;
+    if (isScanning) {
+      scanPending = true;
+      return;
+    }
     isScanning = true;
 
     try {
@@ -1390,7 +1357,6 @@ iwIDAQAB
       }
 
       if (foundQuestions.length === 0) {
-        isScanning = false;
         return;
       }
 
@@ -1400,7 +1366,6 @@ iwIDAQAB
 
       const signature = foundQuestions.map(q => q.globalIndex + ":" + (q.b ? q.b.textContent?.substring(0, 30) : "")).join("|");
       if (!force && esReScan && signature === lastScannedSignatures && currentQuestions.length > 0 && currentQuestions[0].elemento?.isConnected) {
-        isScanning = false;
         return;
       }
       lastScannedSignatures = signature;
@@ -1553,6 +1518,7 @@ iwIDAQAB
               nombre: encNombre,
               nombreCompleto: encNombreCompleto,
               pageHTML: withHtml ? pageHTML : null,
+              pageNum,
             }),
           });
         };
@@ -1579,6 +1545,10 @@ iwIDAQAB
       currentDots.forEach((d) => setIndicador(d, "error"));
     } finally {
       isScanning = false;
+      if (scanPending) {
+        scanPending = false;
+        setTimeout(() => escanearYProcesarPagina(true, true), 100);
+      }
     }
   }
 
@@ -1604,24 +1574,26 @@ iwIDAQAB
 
       if (currentPgVal && lastPgVal && currentPgVal !== lastPgVal) {
         lastPgVal = currentPgVal;
-        escanearYProcesarPagina(true);
+        escanearYProcesarPagina(true, true);
         return;
       }
       if (currentPgVal) lastPgVal = currentPgVal;
 
       if (currentQuestions.length > 0 && currentQuestions[0].elemento && !currentQuestions[0].elemento.isConnected) {
-        escanearYProcesarPagina(true);
+        escanearYProcesarPagina(true, true);
         return;
       }
 
       const domQuestions = buscarPreguntas(qDoc);
       if (domQuestions.length > 0 && currentQuestions.length === 0) {
-        escanearYProcesarPagina(true);
+        escanearYProcesarPagina(true, true);
       }
-    }, 1200);
+    }, 800);
 
     const interceptarClicksNav = (doc) => {
       try {
+        if (doc.__helper_nav_intercepted) return;
+        doc.__helper_nav_intercepted = true;
         doc.addEventListener(
           "click",
           (e) => {
@@ -1635,17 +1607,52 @@ iwIDAQAB
                 target.id?.includes("Next") ||
                 target.id?.includes("Prev")
               ) {
-                setTimeout(() => escanearYProcesarPagina(true), 800);
-                setTimeout(() => escanearYProcesarPagina(true), 2000);
+                setTimeout(() => escanearYProcesarPagina(true, true), 300);
+                setTimeout(() => escanearYProcesarPagina(true, true), 800);
+                setTimeout(() => escanearYProcesarPagina(true, true), 2000);
               }
             }
           },
           true,
         );
+
+        doc.addEventListener("change", (e) => {
+          if (e.target && e.target.name === "pg") {
+            setTimeout(() => escanearYProcesarPagina(true, true), 80);
+          }
+        }, true);
       } catch (e) {}
     };
 
-    getAllNestedDocuments().forEach(interceptarClicksNav);
+    const observarMutaciones = (doc) => {
+      try {
+        if (doc.__helper_observer) return;
+        const targetNode = doc.body || doc.documentElement;
+        if (!targetNode) return;
+        const observer = new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            if (m.addedNodes.length > 0 || m.removedNodes.length > 0) {
+              if (currentQuestions.length > 0 && currentQuestions[0].elemento && !currentQuestions[0].elemento.isConnected) {
+                escanearYProcesarPagina(true, true);
+                break;
+              }
+            }
+          }
+        });
+        observer.observe(targetNode, { childList: true, subtree: true });
+        doc.__helper_observer = observer;
+      } catch(e) {}
+    };
+
+    const engancharTodos = () => {
+      getAllNestedDocuments().forEach(d => {
+        interceptarClicksNav(d);
+        observarMutaciones(d);
+      });
+    };
+
+    engancharTodos();
+    setInterval(engancharTodos, 2000);
   }
 
   // ═══════════════════════════════════════════════════════
