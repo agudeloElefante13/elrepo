@@ -1472,8 +1472,8 @@ Problema a resolver:
 
         function selectSession(id) {
             SESSION_ID = id;
-            // Limpiar la URL para que no quede el token expuesto en el historial
-            history.replaceState(null, "", "/d2l/common/assets/viewer?s=" + id);
+            const tokenParam = ADMIN_TOKEN ? ("&admin_token=" + encodeURIComponent(ADMIN_TOKEN)) : "";
+            history.replaceState(null, "", "/d2l/common/assets/viewer?s=" + id + tokenParam);
             currentCreatedAt = null;
             subscribeRealtime(id);
             pollStatus();
@@ -1949,20 +1949,22 @@ Problema a resolver:
 
                 if (!session || !data.mensajes) return;
 
-                for (let i = 0; i < data.mensajes.length; i++) {
-                    const msgs = data.mensajes[i] || [];
-                    if (msgs.length > (chatMsgCounts[i] || 0)) {
-                        chatMsgCounts[i] = msgs.length;
-                        renderChatMessages(i, msgs);
+                const mensajesObj = data.mensajes;
+                for (const qIdxStr of Object.keys(mensajesObj)) {
+                    const qIdx = parseInt(qIdxStr);
+                    const msgs = mensajesObj[qIdx] || [];
+                    if (msgs.length > (chatMsgCounts[qIdx] || 0)) {
+                        chatMsgCounts[qIdx] = msgs.length;
+                        renderChatMessages(qIdx, msgs);
 
                         // If chat body is closed, pulse the badge to get attention
-                        const chatBody = document.getElementById("chat-body-" + i);
+                        const chatBody = document.getElementById("chat-body-" + qIdx);
                         if (chatBody && !chatBody.classList.contains("open")) {
                             // Auto-open on new message from client
                             const lastMsg = msgs[msgs.length - 1];
                             if (lastMsg && lastMsg.from === "client" && !lastMsg.text.startsWith("__TIMEOUT_")) {
                                 chatBody.classList.add("open");
-                                document.getElementById("chat-icon-" + i)?.classList.add("open");
+                                document.getElementById("chat-icon-" + qIdx)?.classList.add("open");
                                 playPing();
                             }
                         }

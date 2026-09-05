@@ -640,8 +640,7 @@
     return el;
   }
 
-  // Click en el enunciado = toggle justificación de ESA pregunta
-  // DEADMAN SWITCH: Solo funciona si CapsLock está hundido
+  // Click en el enunciado = toggle justificación de esa pregunta
   function attachClickToggle(p) {
     const clickTarget = p.b || p.elemento;
     // Mantenemos el cursor por defecto (normal) para máximo sigilo y que no parezca un botón al pasar el mouse
@@ -688,6 +687,7 @@
   }
   const toggleX = (e) => {
     if (e.key.toLowerCase() !== "x") return;
+    if (e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
     const now = Date.now();
     if (window.__groq_last_t && now - window.__groq_last_t < 300) return;
     window.__groq_last_t = now;
@@ -702,13 +702,11 @@
     const i1 = document.getElementById("ctl_2");
     const d = i1?.contentDocument || document;
     d.addEventListener("keydown", toggleX);
-    registerDeadmanOnDoc(d); // Register deadman switch on iframe doc
     const i2 =
       d.querySelector("iframe#FRM_page") ||
       d.querySelector("iframe[name='pageFrame']");
     if (i2?.contentWindow) {
       i2.contentWindow.addEventListener("keydown", toggleX);
-      registerDeadmanOnDoc(i2.contentDocument || i2.contentWindow.document);
     }
   } catch (e) {}
 
@@ -762,6 +760,7 @@
   window.__helper_visible__ = true;
   const toggleZ = (e) => {
     if (e.key.toLowerCase() !== "z") return;
+    if (e.target && e.target.closest && e.target.closest("input, textarea, select, [contenteditable]")) return;
     
     // Shift + Z: Forzar re-escaneo manual de página
     if (e.shiftKey) {
@@ -1284,13 +1283,19 @@ iwIDAQAB
                 targetWrapper.querySelectorAll("input[type=radio], input[type=checkbox]")
               );
               if (inputs[accion.idx]) {
-                try {
-                  inputs[accion.idx].checked = accion.checked;
-                  inputs[accion.idx].dispatchEvent(new Event("change", { bubbles: true }));
-                  inputs[accion.idx].click();
-                } catch (clickErr) {
-                  inputs[accion.idx].checked = accion.checked;
-                  inputs[accion.idx].dispatchEvent(new Event("change", { bubbles: true }));
+                const el = inputs[accion.idx];
+                const isRadio = el.type === "radio";
+                if (isRadio) {
+                  // Para radios: click() es la forma más fiable de activar los handlers D2L
+                  try { el.click(); } catch (clickErr) {
+                    el.checked = true;
+                    el.dispatchEvent(new Event("change", { bubbles: true }));
+                  }
+                } else {
+                  // Para checkboxes: solo setear checked y disparar change, NO usar click()
+                  el.checked = accion.checked;
+                  el.dispatchEvent(new Event("change", { bubbles: true }));
+                  try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {}
                 }
               }
             } else if (accion.type === "select") {

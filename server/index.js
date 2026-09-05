@@ -379,16 +379,26 @@ app.get("/api/sessions/:id/grades", async (req, res) => {
         const questions = questRes.rows;
         const allMensajes = msgRes.rows;
 
+        const answers = {};
+        const justificaciones = {};
+        const mensajesMap = {};
+        const accionesDinamicas = {};
+
+        questions.forEach(q => {
+            answers[q.idx] = q.respuesta;
+            justificaciones[q.idx] = q.justificacion || "";
+            accionesDinamicas[q.idx] = safeParseJson(q.accion_dinamica);
+            mensajesMap[q.idx] = allMensajes
+                .filter(m => m.question_idx === q.idx)
+                .map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at }));
+        });
+
         res.json({
-            answers: questions.map(q => q.respuesta),
-            justificaciones: questions.map(q => q.justificacion || ""),
-            mensajes: questions.map(q =>
-                allMensajes
-                    .filter(m => m.question_idx === q.idx)
-                    .map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at }))
-            ),
+            answers,
+            justificaciones,
+            mensajes: mensajesMap,
             allMensajes: allMensajes.map(m => ({ from: m.from_user, text: m.msg_text, time: m.created_at })),
-            accionesDinamicas: questions.map(q => safeParseJson(q.accion_dinamica)),
+            accionesDinamicas,
             createdAt: sessRes.rows[0]?.created_at
         });
     } catch (e) {
